@@ -1,3 +1,4 @@
+from invoice_xml import read_ubl_invoice, approval_description
 from flask import Flask, render_template, request, jsonify, send_from_directory, redirect, url_for, session, flash, Response, abort
 from reportlab.pdfgen import canvas as rl_canvas
 from reportlab.pdfbase import pdfmetrics
@@ -929,66 +930,82 @@ def gelen_faturalar():
 @app.route('/api/upload', methods=['POST'])
 @login_gerekli
 def upload_fatura():
-    if 'dosyalar' not in request.files:
+    dosyalar = [d for d in request.files.getlist('dosyalar') if d and d.filename]
+    if not dosyalar:
         return jsonify({'hata': 'Dosya bulunamadı'}), 400
+
+    xml_verileri = []
+    for dosya in dosyalar:
+        if dosya.filename.lower().endswith('.xml'):
+            try:
+                xml_verileri.append((os.path.splitext(secure_filename(dosya.filename))[0].casefold(),
+                                     read_ubl_invoice(dosya.read())))
+            except Exception as e:
+                return jsonify({'hata': f'XML okunamadı ({dosya.filename}): {e}'}), 400
+
+    pdfler = [d for d in dosyalar if d.filename.lower().endswith('.pdf')]
+    if not pdfler:
+        return jsonify({'hata': 'Görüntüleme için XML ile birlikte PDF de seçilmelidir.'}), 400
+
     yuklenenler = []
-    for dosya in request.files.getlist('dosyalar'):
-        if dosya.filename.lower().endswith('.pdf'):
-            dosya_adi = dosya.filename
-            dosya_bytes = dosya.read()
-            not_kullanicisi = pdf_notundan_kullanici_bul(dosya_bytes)
-            pdf_tarihi, pdf_tutari = pdf_tarih_ve_tutar_bul(dosya_bytes)
-            simdi = datetime.now()
-            if BULUT_MOD:
-                # Supabase Storage'a yükle
-                depo_dosya_adi = secure_filename(dosya_adi)
-                if not depo_dosya_adi.lower().endswith('.pdf'):
-                    depo_dosya_adi = f"fatura_{simdi.strftime('%Y%m%d%H%M%S%f')}.pdf"
-                dosya_yolu = f"faturalar/{simdi.year}/{simdi.month:02d}/{depo_dosya_adi}"
-                goreli_yol = supabase_yukle(dosya_bytes, dosya_yolu)
-            else:
-                # Lokal - aylık klasör
-                ay_klasor = os.path.join(app.config['UPLOAD_FOLDER'],
-                                         str(simdi.year), f'{simdi.month:02d}')
-                os.makedirs(ay_klasor, exist_ok=True)
-                with open(os.path.join(ay_klasor, dosya_adi), 'wb') as yerel_pdf:
-                    yerel_pdf.write(dosya_bytes)
-                goreli_yol = f"{simdi.year}/{simdi.month:02d}/{dosya_adi}"
-            fno, firma = dosyadan_bilgi_cek(dosya_adi)
-            sade_dosya_adi = secure_filename(dosya_adi).casefold()
-            mevcut = next(
-                (
-                    kayit for kayit in Fatura.query.all()
-                    if secure_filename(
-                        os.path.basename(unquote(kayit.dosya_adi or ''))
-                    ).casefold() == sade_dosya_adi
-                    or (fno and kayit.fatura_no == fno)
-                ),
-                None,
-            )
-            if mevcut:
-                # Aynı faturanın eski/kırık bulut bağlantısını yeni Supabase
-                # adresiyle değiştir; ikinci bir fatura kaydı oluşturma.
-                mevcut.dosya_adi = goreli_yol
-                # Bekleyen bir fatura yeniden yüklendiyse Toplu Atama listesinde
-                # tekrar görünsün. Onaylanmış/reddedilmiş durumunu değiştirme.
-                if mevcut.durum == 'bekliyor':
-                    mevcut.atama_tamamlandi = False
-                if pdf_tarihi:
-                    mevcut.fatura_tarihi = pdf_tarihi
-                if pdf_tutari is not None:
-                    mevcut.tutar = pdf_tutari
-                if not_kullanicisi:
-                    mevcut.atanan_id = not_kullanicisi.id
-                yuklenenler.append(dosya_adi)
-            elif not Fatura.query.filter_by(dosya_adi=goreli_yol).first():
-                db.session.add(Fatura(dosya_adi=goreli_yol, kaynak='upload',
-                                      fatura_no=fno or None, firma_adi=firma or None,
-                                      fatura_tarihi=pdf_tarihi, tutar=pdf_tutari,
-                                      atanan_id=not_kullanicisi.id if not_kullanicisi else None))
-                yuklenenler.append(dosya_adi)
+    for dosya in pdfler:
+        dosya_adi = dosya.filename
+        dosya_bytes = dosya.read()
+        not_kullanicisi = pdf_notundan_kullanici_bul(dosya_bytes)
+        pdf_tarihi, pdf_tutari = pdf_tarih_ve_tutar_bul(dosya_bytes)
+        fno, firma = dosyadan_bilgi_cek(dosya_adi)
+        pdf_kok = os.path.splitext(secure_filename(dosya_adi))[0].casefold()
+        xml = next((x for kok, x in xml_verileri if kok == pdf_kok), None)
+        if xml is None and len(xml_verileri) == 1 and len(pdfler) == 1:
+            xml = xml_verileri[0][1]
+        if xml:
+            fno = xml.get('fatura_no') or fno
+            firma = xml.get('firma_adi') or firma
+            pdf_tarihi = xml.get('fatura_tarihi') or pdf_tarihi
+            pdf_tutari = xml.get('tutar') if xml.get('tutar') is not None else pdf_tutari
+
+        simdi = datetime.now()
+        if BULUT_MOD:
+            depo_dosya_adi = secure_filename(dosya_adi)
+            dosya_yolu = f"faturalar/{simdi.year}/{simdi.month:02d}/{depo_dosya_adi}"
+            goreli_yol = supabase_yukle(dosya_bytes, dosya_yolu)
+        else:
+            ay_klasor = os.path.join(app.config['UPLOAD_FOLDER'], str(simdi.year), f'{simdi.month:02d}')
+            os.makedirs(ay_klasor, exist_ok=True)
+            with open(os.path.join(ay_klasor, dosya_adi), 'wb') as yerel_pdf:
+                yerel_pdf.write(dosya_bytes)
+            goreli_yol = f"{simdi.year}/{simdi.month:02d}/{dosya_adi}"
+
+        sade_dosya_adi = secure_filename(dosya_adi).casefold()
+        mevcut = next((kayit for kayit in Fatura.query.all()
+                       if secure_filename(os.path.basename(unquote(kayit.dosya_adi or ''))).casefold() == sade_dosya_adi
+                       or (fno and kayit.fatura_no == fno)), None)
+        aciklama = approval_description(xml) if xml else ''
+        if mevcut:
+            mevcut.dosya_adi = goreli_yol
+            if mevcut.durum == 'bekliyor':
+                mevcut.atama_tamamlandi = False
+            mevcut.fatura_no = fno or mevcut.fatura_no
+            mevcut.firma_adi = firma or mevcut.firma_adi
+            mevcut.fatura_tarihi = pdf_tarihi or mevcut.fatura_tarihi
+            mevcut.tutar = pdf_tutari if pdf_tutari is not None else mevcut.tutar
+            if xml:
+                mevcut.para_birimi = xml.get('para_birimi') or mevcut.para_birimi
+                mevcut.not_alani = mevcut.not_alani or aciklama
+            if not_kullanicisi:
+                mevcut.atanan_id = not_kullanicisi.id
+        else:
+            db.session.add(Fatura(dosya_adi=goreli_yol, kaynak='xml+pdf' if xml else 'upload',
+                                  fatura_no=fno or None, firma_adi=firma or None,
+                                  fatura_tarihi=pdf_tarihi, tutar=pdf_tutari,
+                                  para_birimi=(xml.get('para_birimi') if xml else 'TRY') or 'TRY',
+                                  not_alani=aciklama or None,
+                                  atanan_id=not_kullanicisi.id if not_kullanicisi else None))
+        yuklenenler.append(dosya_adi)
+
     db.session.commit()
-    return jsonify({'basarili': True, 'yuklenen': len(yuklenenler)})
+    return jsonify({'basarili': True, 'yuklenen': len(yuklenenler),
+                    'xml_okunan': len(xml_verileri)})
 
 @app.route('/api/excel-fatura-bilgileri', methods=['POST'])
 @login_gerekli
@@ -1168,17 +1185,8 @@ def fatura_onayla(fatura_id):
     fatura.onay_tarihi = datetime.utcnow()
     db.session.commit()
 
-    # Onaylananlar için PDF damga
-    damga_uygulandi = None
-    if fatura.durum == 'onaylandi':
-        try:
-            fatura_onay_damgasi_uygula(fatura, aktif_kullanici())
-            damga_uygulandi = True
-        except Exception as e:
-            damga_uygulandi = False
-            app.logger.exception('Damga hatası: %s', e)
-
-    return jsonify({'basarili': True, 'damga_uygulandi': damga_uygulandi})
+    # PDF değiştirilmez. Onay notu, onaylayan ve tarih veritabanında saklanır.
+    return jsonify({'basarili': True, 'onay_notu_kaydedildi': True})
 
 @app.route('/api/fatura/<int:fatura_id>/aktar', methods=['POST'])
 @login_gerekli
