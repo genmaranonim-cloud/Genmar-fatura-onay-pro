@@ -359,7 +359,7 @@
                 <option value="tutar_asc">Tutar: Düşük–Yüksek</option>
             </select>
         </div>
-        <button class="btn btn-ghost btn-sm" onclick="toggleUploadPanel()">+ PDF Yükle</button>
+        <button class="btn btn-ghost btn-sm" onclick="toggleUploadPanel()">+ PDF / XML Yükle</button>
     </div>
 </div>
 {% endblock %}
@@ -394,12 +394,12 @@
 <!-- UPLOAD PANELİ -->
 <div id="uploadPanel" style="display:none; margin-bottom:20px;">
     <div class="card">
-        <div class="onay-bolum-baslik">PDF Yükle</div>
+        <div class="onay-bolum-baslik">PDF + XML Yükle</div>
 
         <div class="upload-zone" id="uploadZone">
             <div class="icon">📎</div>
-            <div class="text">PDF dosyalarını buraya sürükle veya <strong>tıkla</strong></div>
-            <input type="file" id="fileInput" multiple accept=".pdf" style="display:none">
+            <div class="text">PDF ve UBL-TR XML dosyalarını birlikte buraya sürükle veya <strong>tıkla</strong></div>
+            <input type="file" id="fileInput" multiple accept=".pdf,.xml" style="display:none">
             <div class="upload-progress" id="uploadProgress">
                 <div class="upload-progress-bar" id="uploadBar"></div>
             </div>
@@ -408,8 +408,8 @@
         <div class="divider" style="margin:12px 0"></div>
 
         <div style="display:flex;align-items:center;gap:10px;flex-wrap:wrap">
-            <button class="btn btn-ghost" type="button" onclick="faturaBilgileriniYenidenOku()">📅 Tarihleri PDF'den Yeniden Oku</button>
-            <span style="font-size:12px;color:var(--text2)">Tarihi veya tutarı eksik faturaları tamamlar.</span>
+            <button class="btn btn-ghost" type="button" onclick="faturaBilgileriniYenidenOku()">📅 Eksik Bilgileri Yeniden Oku</button>
+            <span style="font-size:12px;color:var(--text2)">XML varsa tüm temel alanları; yoksa PDF tarih ve tutarını tamamlar.</span>
         </div>
 
         <div class="divider" style="margin:12px 0"></div>
@@ -989,14 +989,9 @@ async function onayla(durum) {
     });
     if(res.basarili) {
         const etiket={onaylandi:'Onaylandı ✓',reddedildi:'Reddedildi ✗',eksik_bilgi:'Eksik Bilgi !'};
-        if(durum === 'onaylandi' && res.damga_uygulandi === false)
-            toast('Fatura onaylandı; ancak PDF damgası eklenemedi. Onaylı faturadan tekrar deneyin.','error');
-        else
-            toast(etiket[durum]||'Kaydedildi','success');
-        const kart=document.querySelector(`[data-id="${aktifFaturaId}"]`);
-        if(kart){kart.style.opacity='0.4';kart.style.pointerEvents='none';}
-        if(aktifIndex<faturalar.length-1) setTimeout(()=>sonrakiFatura(),600);
-        else setTimeout(()=>{kapat();location.reload();},800);
+        toast(durum === 'onaylandi' ? 'Onay notu, onaylayan ve tarih kaydedildi. Sonraki faturaya geçmek için → kullanın.' : (etiket[durum]||'Kaydedildi'),'success');
+        // Onaydan sonra aynı faturada kal. Kullanıcı açıkça yön tuşuna
+        // veya Sonraki düğmesine basmadan başka faturaya geçme.;
     }
 }
 
