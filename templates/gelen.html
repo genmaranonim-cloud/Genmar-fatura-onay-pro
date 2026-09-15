@@ -551,6 +551,12 @@
 
                 <div class="divider"></div>
 
+                <div id="faturaSatirlariAlani" style="display:none">
+                    <div class="onay-bolum-baslik">XML Fatura Satırları</div>
+                    <div id="faturaSatirlari" style="max-height:120px;overflow:auto;background:var(--surface2);border:1px solid var(--border);border-radius:8px;padding:8px;font-size:11px"></div>
+                    <div class="divider"></div>
+                </div>
+
                 <!-- PROJE KODLARI -->
                 <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:8px">
                     <span class="onay-bolum-baslik" style="margin:0">Proje Kodları</span>
@@ -590,7 +596,6 @@
                     <button class="btn btn-orange" onclick="onayla('eksik_bilgi')">! Eksik Bilgi</button>
                     <button class="btn btn-ghost" onclick="aktarPanelAc()" style="font-size:12px">↗ Farklı Kişiye Aktar</button>
                     <button class="btn btn-red" id="faturaSilBtn" onclick="faturaSil()" style="display:none;grid-column:1/-1;font-size:12px">🗑 Faturayı Sil</button>
-                    <button class="btn btn-ghost" id="faturaDamgaBtn" onclick="faturaDamgala()" style="display:none;grid-column:1/-1;font-size:12px">✓ Onay Damgasını Yenile</button>
                 </div>
 
                 <!-- ONAYLAYAN - en altta -->
@@ -632,6 +637,15 @@ let aktifIndex = 0;
 let aktifFaturaId = null;
 let aktifPdfObjectUrl = null;
 
+function escapeHtml(value) {
+    return String(value ?? '')
+        .replaceAll('&', '&amp;')
+        .replaceAll('<', '&lt;')
+        .replaceAll('>', '&gt;')
+        .replaceAll('"', '&quot;')
+        .replaceAll("'", '&#039;');
+}
+
 // Oturum bilgisi
 let oturumBilgi = {};
 fetch('/api/oturum-bilgisi').then(r=>r.json()).then(d=>{
@@ -660,18 +674,6 @@ async function faturaSil() {
         setTimeout(()=>location.reload(), 700);
     } else {
         toast(data.hata || 'Fatura silinemedi', 'error');
-    }
-}
-
-async function faturaDamgala() {
-    if(!aktifFaturaId) return;
-    const res = await fetch(`/api/fatura/${aktifFaturaId}/damgala`, {method:'POST'});
-    const data = await res.json();
-    if(data.basarili) {
-        toast('Onay damgası PDF dosyasına eklendi', 'success');
-        document.getElementById('pdfFrame').src = `/fatura/${aktifFaturaId}/goruntule?t=${Date.now()}`;
-    } else {
-        toast(data.hata || 'Onay damgası eklenemedi', 'error');
     }
 }
 
@@ -876,9 +878,15 @@ async function faturaAc(id) {
     const kart = document.querySelector(`.fatura-kart[data-id="${id}"]`);
     const firmaAdi = kart?.dataset.firma || 'Firma belirtilmedi';
     const faturaNo = kart?.dataset.faturaNo || '';
-    const damgaBtn = document.getElementById('faturaDamgaBtn');
-    if(damgaBtn) damgaBtn.style.display =
-        kart?.dataset.durum === 'onaylandi' ? 'block' : 'none';
+    const satirAlani = document.getElementById('faturaSatirlariAlani');
+    const satirKutusu = document.getElementById('faturaSatirlari');
+    const satirlar = data.satirlar || [];
+    if(satirAlani && satirKutusu) {
+        satirAlani.style.display = satirlar.length ? 'block' : 'none';
+        satirKutusu.innerHTML = satirlar.map(s =>
+            `<div style="padding:4px 0;border-bottom:1px solid var(--border)"><strong>${s.sira}.</strong> ${escapeHtml(s.aciklama)}</div>`
+        ).join('');
+    }
     document.getElementById('modalBaslik').textContent =
         faturaNo ? `${firmaAdi} — ${faturaNo}` : firmaAdi;
     guncelleSayac(); formuTemizle();

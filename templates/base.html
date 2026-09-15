@@ -70,6 +70,19 @@
             margin-top: 2px;
         }
 
+        .version-badge {
+            display: inline-flex;
+            margin-top: 8px;
+            padding: 3px 8px;
+            border: 1px solid rgba(124,143,245,0.45);
+            border-radius: 999px;
+            color: var(--accent2);
+            background: rgba(79,110,247,0.10);
+            font-size: 10px;
+            font-weight: 700;
+            letter-spacing: .4px;
+        }
+
         .sidebar-nav {
             flex: 1;
             padding: 16px 0;
@@ -481,6 +494,7 @@
     <div class="sidebar-logo">
         <div class="brand">GENMAR</div>
         <div class="sub">Fatura Onay Sistemi</div>
+        <div class="version-badge">{{ app_version }}</div>
     </div>
     <nav class="sidebar-nav">
         <div class="nav-section">Faturalar</div>

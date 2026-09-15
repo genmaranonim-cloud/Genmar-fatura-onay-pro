@@ -19,10 +19,16 @@ import openpyxl
 import xlrd
 
 app = Flask(__name__)
+APP_VERSION = 'V0.2 – TEST'
 app.config['SECRET_KEY'] = os.environ.get('SECRET_KEY', 'genmar-fatura-2026')
 app.config['JSON_AS_ASCII'] = False
 app.json.ensure_ascii = False
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
+
+@app.context_processor
+def surum_bilgisi():
+    """Sürüm numarasını base şablonunu kullanan bütün ekranlarda göster."""
+    return {'app_version': APP_VERSION}
 
 @app.after_request
 def turkce_karakter_kodlamasi(response):
@@ -440,6 +446,14 @@ class Fatura(db.Model):
     ana_proje = db.relationship('AnaProje')
     alt_proje = db.relationship('AltProje')
     proje_satirlari = db.relationship('FaturaProje', backref='fatura', cascade='all, delete-orphan')
+    satirlar = db.relationship('FaturaSatir', backref='fatura', cascade='all, delete-orphan',
+                              order_by='FaturaSatir.sira')
+
+class FaturaSatir(db.Model):
+    id = db.Column(db.Integer, primary_key=True)
+    fatura_id = db.Column(db.Integer, db.ForeignKey('fatura.id'), nullable=False, index=True)
+    sira = db.Column(db.Integer, nullable=False)
+    aciklama = db.Column(db.Text, nullable=False)
 
 # ─── YARDIMCI ───────────────────────────────────────────────────────────────
 
@@ -457,6 +471,16 @@ def metin_degeri(deger):
     if deger is None:
         return ''
     return unicodedata.normalize('NFC', str(deger)).strip()
+
+def fatura_satirlarini_yenile(fatura, xml_verisi):
+    """XML'den okunan kalemleri PDF'den bağımsız ve kalıcı olarak sakla."""
+    if not xml_verisi:
+        return
+    fatura.satirlar.clear()
+    for sira, aciklama in enumerate(xml_verisi.get('satirlar', []), 1):
+        temiz = metin_degeri(aciklama)
+        if temiz:
+            fatura.satirlar.append(FaturaSatir(sira=sira, aciklama=temiz))
 
 def _arama_metni(deger):
     metin = unicodedata.normalize('NFKD', metin_degeri(deger)).casefold()
@@ -992,15 +1016,18 @@ def upload_fatura():
             if xml:
                 mevcut.para_birimi = xml.get('para_birimi') or mevcut.para_birimi
                 mevcut.not_alani = mevcut.not_alani or aciklama
+                fatura_satirlarini_yenile(mevcut, xml)
             if not_kullanicisi:
                 mevcut.atanan_id = not_kullanicisi.id
         else:
-            db.session.add(Fatura(dosya_adi=goreli_yol, kaynak='xml+pdf' if xml else 'upload',
-                                  fatura_no=fno or None, firma_adi=firma or None,
-                                  fatura_tarihi=pdf_tarihi, tutar=pdf_tutari,
-                                  para_birimi=(xml.get('para_birimi') if xml else 'TRY') or 'TRY',
-                                  not_alani=aciklama or None,
-                                  atanan_id=not_kullanicisi.id if not_kullanicisi else None))
+            yeni_fatura = Fatura(dosya_adi=goreli_yol, kaynak='xml+pdf' if xml else 'upload',
+                                 fatura_no=fno or None, firma_adi=firma or None,
+                                 fatura_tarihi=pdf_tarihi, tutar=pdf_tutari,
+                                 para_birimi=(xml.get('para_birimi') if xml else 'TRY') or 'TRY',
+                                 not_alani=aciklama or None,
+                                 atanan_id=not_kullanicisi.id if not_kullanicisi else None)
+            fatura_satirlarini_yenile(yeni_fatura, xml)
+            db.session.add(yeni_fatura)
         yuklenenler.append(dosya_adi)
 
     db.session.commit()
@@ -1108,6 +1135,7 @@ def fatura_detay(fatura_id):
         'firma_adi': f.firma_adi or '', 'fatura_tarihi': f.fatura_tarihi or '',
         'tutar': f.tutar or '', 'not_alani': f.not_alani or '',
         'odeme_notu': f.odeme_notu or '',
+        'satirlar': [{'sira': s.sira, 'aciklama': s.aciklama} for s in f.satirlar],
         'projeler': projeler,
         'onaylayan_id': f.onaylayan_id, 'atanan_id': f.atanan_id,
         'pdf_url': pdf_url,
@@ -1307,15 +1335,6 @@ def fatura_goruntule(fatura_id):
         data, dosya_adi = fatura_pdf_bytes_ve_adres(fatura)
         if not data.startswith(b'%PDF'):
             raise ValueError('Geçerli bir PDF dosyası değil')
-
-        # Onay sırasında depolama kısa süreli hata verirse damga eksik kalmasın.
-        # Kullanıcı faturayı görüntülediğinde eksik damga bir kez otomatik tamamlanır.
-        if fatura.durum == 'onaylandi' and not pdf_damgali_mi(data):
-            try:
-                fatura_onay_damgasi_uygula(fatura)
-                data, dosya_adi = fatura_pdf_bytes_ve_adres(fatura)
-            except Exception as damga_hatasi:
-                app.logger.exception('Görüntülemede otomatik damga hatası: %s', damga_hatasi)
 
         belge = fitz.open(stream=data, filetype='pdf')
         sayfalar = []
