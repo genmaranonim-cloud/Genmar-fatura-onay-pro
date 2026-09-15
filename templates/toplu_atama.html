@@ -1,0 +1,78 @@
+{% extends "base.html" %}
+{% block title %}Toplu Fatura Atama{% endblock %}
+{% block topbar %}<div class="topbar"><span class="topbar-title">☑ Toplu Fatura Atama</span></div>{% endblock %}
+
+{% block extra_css %}
+<style>
+.atama-bar,.filtre-bar{display:flex;gap:10px;align-items:center;flex-wrap:wrap;margin-bottom:12px;padding:12px;background:var(--surface);border:1px solid var(--border);border-radius:10px}
+.atama-bar select{min-width:230px}.filtre-bar{display:grid;grid-template-columns:1.4fr 1fr 1fr auto auto}.filtre-bar>*{min-width:0}
+.tablo-sarici{overflow:auto;background:var(--surface);border:1px solid var(--border);border-radius:10px;max-height:calc(100dvh - 245px)}
+.atama-tablo{width:100%;border-collapse:collapse;min-width:930px}.atama-tablo th,.atama-tablo td{padding:9px;border-bottom:1px solid var(--border);text-align:left;font-size:12px}
+.atama-tablo th{position:sticky;top:0;background:var(--surface2);z-index:3;color:var(--text2)}.filtre-satiri th{top:36px;padding:5px;z-index:3}
+.filtre-satiri input{width:100%;min-width:90px;padding:5px 7px;font-size:11px}.atama-tablo tr.secili{background:rgba(79,110,247,.12)}.atama-tablo tr.gizli{display:none}
+.firma{max-width:270px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}.sayac{color:var(--accent2);font-weight:700}.sonuc-sayac{color:var(--text2);font-size:12px}
+.sirala-btn{background:none;border:0;color:inherit;font:inherit;font-weight:700;cursor:pointer;padding:0}.sirala-btn.aktif{color:var(--accent2)}
+@media(max-width:900px){.filtre-bar{grid-template-columns:1fr 1fr}.atama-bar>*{width:100%}.atama-bar select{min-width:0}.tablo-sarici{max-height:calc(100dvh - 310px)}}
+</style>
+{% endblock %}
+
+{% block content %}
+<div class="atama-bar">
+  <strong>Seçilen faturaları:</strong>
+  <select id="kullanici" class="form-control">
+    <option value="">Kullanıcı seçin...</option>
+    {% for k in kullanicilar %}<option value="{{ k.id }}">{{ k.ad_soyad }}{% if k.departman %} ({{ k.departman.kod }}){% endif %}</option>{% endfor %}
+  </select>
+  <button class="btn btn-primary" onclick="seciliAta()">Seçilenleri Ata</button>
+  <button class="btn btn-ghost" onclick="document.getElementById('topluPdfInput').click()">+ PDF Yükle</button>
+  <button class="btn btn-ghost" onclick="document.getElementById('klasorInput').click()">↻ Klasörü Eşitle</button>
+  <button class="btn btn-green" onclick="islemTamamla()">✓ İşlem Tamamlandı</button>
+  <input type="file" id="topluPdfInput" accept=".pdf" multiple style="display:none" onchange="pdfYukle(this.files)">
+  <input type="file" id="klasorInput" accept=".pdf" multiple webkitdirectory directory style="display:none" onchange="pdfYukle([...this.files].filter(f=>f.name.toLowerCase().endsWith('.pdf')))">
+  <span class="sayac" id="secimSayac">0 fatura seçildi</span>
+</div>
+
+<div class="filtre-bar">
+  <input id="genelAra" class="form-control" placeholder="Fatura no veya firma ara..." oninput="tabloFiltrele()">
+  <select id="atamaFiltre" class="form-control" onchange="tabloFiltrele()"><option value="">Tüm Atamalar</option><option value="atanan">Atananlar</option><option value="atanmayan">Atanmayanlar</option></select>
+  <select id="hizliSirala" class="form-control" onchange="hizliSirala()"><option value="tarih_desc">Tarih: Yeni–Eski</option><option value="tarih_asc">Tarih: Eski–Yeni</option><option value="firma_asc">Firma A–Z</option><option value="firma_desc">Firma Z–A</option><option value="no_asc">Fatura No A–Z</option><option value="atanan_asc">Atanan A–Z</option></select>
+  <button class="btn btn-ghost" onclick="filtreleriTemizle()">Filtreleri Temizle</button>
+  <span class="sonuc-sayac" id="sonucSayac"></span>
+</div>
+
+<div class="tablo-sarici"><table class="atama-tablo">
+<thead>
+  <tr><th><input type="checkbox" id="tumunuSec" onchange="tumunuSecDegisti()"></th>
+    <th><button class="sirala-btn" onclick="sutunSirala('no',this)">Fatura No ↕</button></th>
+    <th><button class="sirala-btn" onclick="sutunSirala('firma',this)">Firma ↕</button></th>
+    <th><button class="sirala-btn" onclick="sutunSirala('tarih',this)">Tarih ↕</button></th>
+    <th><button class="sirala-btn" onclick="sutunSirala('atanan',this)">Mevcut Atanan ↕</button></th><th>PDF</th></tr>
+  <tr class="filtre-satiri"><th></th><th><input id="noFiltre" class="form-control" placeholder="No filtrele" oninput="tabloFiltrele()"></th><th><input id="firmaFiltre" class="form-control" placeholder="Firma filtrele" oninput="tabloFiltrele()"></th><th><input id="tarihFiltre" class="form-control" placeholder="gg.aa.yyyy" oninput="tabloFiltrele()"></th><th><input id="atananFiltre" class="form-control" placeholder="Kişi filtrele" oninput="tabloFiltrele()"></th><th></th></tr>
+</thead>
+<tbody id="atamaTabloGovde">
+{% for f in faturalar %}<tr class="fatura-satiri" data-no="{{ (f.fatura_no or '')|lower }}" data-firma="{{ (f.firma_adi or '')|lower }}" data-tarih="{{ f.fatura_tarihi or f.yuklenme_tarihi.strftime('%d.%m.%Y') }}" data-tarih-sira="{{ f.yuklenme_tarihi.isoformat() }}" data-atanan="{{ (f.atanan.ad_soyad if f.atanan else '')|lower }}" data-atama="{{ 'atanan' if f.atanan else 'atanmayan' }}">
+  <td><input class="fatura-sec" type="checkbox" value="{{ f.id }}" onchange="secimGuncelle()"></td>
+  <td>{{ f.fatura_no or '—' }}</td><td class="firma" title="{{ f.firma_adi or '' }}">{{ f.firma_adi or '—' }}</td>
+  <td>{{ f.fatura_tarihi or f.yuklenme_tarihi.strftime('%d.%m.%Y') }}</td><td>{{ f.atanan.ad_soyad if f.atanan else 'Atanmadı' }}</td>
+  <td><a class="btn btn-ghost btn-sm" href="/fatura/{{ f.id }}/goruntule" target="_blank">Görüntüle</a></td>
+</tr>{% endfor %}
+</tbody></table></div>
+{% endblock %}
+
+{% block extra_js %}<script>
+function kutular(sadeceGorunen=false){return [...document.querySelectorAll('.fatura-sec')].filter(x=>!sadeceGorunen||!x.closest('tr').classList.contains('gizli'))}
+function satirlar(){return [...document.querySelectorAll('.fatura-satiri')]}
+function norm(v){return String(v||'').toLocaleLowerCase('tr-TR').trim()}
+function secimGuncelle(){const ks=kutular(),n=ks.filter(x=>x.checked).length,gv=kutular(true);document.getElementById('secimSayac').textContent=`${n} fatura seçildi`;document.getElementById('tumunuSec').checked=gv.length>0&&gv.every(x=>x.checked);ks.forEach(x=>x.closest('tr').classList.toggle('secili',x.checked))}
+function tumunuSecDegisti(){const v=document.getElementById('tumunuSec').checked;kutular(true).forEach(x=>x.checked=v);secimGuncelle()}
+function tabloFiltrele(){const genel=norm(document.getElementById('genelAra').value),atama=document.getElementById('atamaFiltre').value,no=norm(document.getElementById('noFiltre').value),firma=norm(document.getElementById('firmaFiltre').value),tarih=norm(document.getElementById('tarihFiltre').value),atanan=norm(document.getElementById('atananFiltre').value);let gorunen=0;satirlar().forEach(r=>{const d=r.dataset,atananMetin=d.atanan||'atanmadı';const ok=(!genel||norm(d.no).includes(genel)||norm(d.firma).includes(genel))&&(!atama||d.atama===atama)&&(!no||norm(d.no).includes(no))&&(!firma||norm(d.firma).includes(firma))&&(!tarih||norm(d.tarih).includes(tarih))&&(!atanan||norm(atananMetin).includes(atanan));r.classList.toggle('gizli',!ok);if(ok)gorunen++});document.getElementById('sonucSayac').textContent=`${gorunen} / ${satirlar().length} fatura gösteriliyor`;secimGuncelle()}
+let siralama={alan:'tarih',yon:'desc'};
+function sirala(alan,yon){const govde=document.getElementById('atamaTabloGovde'),liste=satirlar();liste.sort((a,b)=>{if(alan==='tarih'){const x=new Date(a.dataset.tarihSira||0),y=new Date(b.dataset.tarihSira||0);return yon==='asc'?x-y:y-x}const fark=(a.dataset[alan]||'').localeCompare(b.dataset[alan]||'','tr');return yon==='asc'?fark:-fark});liste.forEach(r=>govde.appendChild(r));siralama={alan,yon}}
+function sutunSirala(alan,btn){const yon=siralama.alan===alan&&siralama.yon==='asc'?'desc':'asc';document.querySelectorAll('.sirala-btn').forEach(b=>b.classList.remove('aktif'));btn.classList.add('aktif');sirala(alan,yon)}
+function hizliSirala(){const [alan,yon]=document.getElementById('hizliSirala').value.split('_');sirala(alan,yon)}
+function filtreleriTemizle(){['genelAra','noFiltre','firmaFiltre','tarihFiltre','atananFiltre'].forEach(id=>document.getElementById(id).value='');document.getElementById('atamaFiltre').value='';document.getElementById('hizliSirala').value='tarih_desc';sirala('tarih','desc');tabloFiltrele()}
+async function seciliAta(){const ids=kutular().filter(x=>x.checked).map(x=>Number(x.value)),kid=Number(document.getElementById('kullanici').value);if(!ids.length)return toast('En az bir fatura seçin','error');if(!kid)return toast('Kullanıcı seçin','error');const r=await apiFetch('/api/toplu-atama','POST',{fatura_idleri:ids,kullanici_id:kid});if(r.basarili){toast(`${r.atanan} fatura ${r.kullanici} kullanıcısına atandı`,'success');setTimeout(()=>location.reload(),900)}else toast(r.hata||'Atama yapılamadı','error')}
+async function pdfYukle(dosyalar){if(!dosyalar.length)return;const form=new FormData();[...dosyalar].forEach(d=>form.append('dosyalar',d));toast('PDF yükleniyor...','success');try{const res=await fetch('/api/upload',{method:'POST',body:form}),data=await res.json();if(data.basarili){toast(`${data.yuklenen} fatura yüklendi`,'success');setTimeout(()=>location.reload(),900)}else toast(data.hata||'PDF yüklenemedi','error')}catch(e){toast('PDF yüklenirken bağlantı hatası oluştu','error')}finally{document.getElementById('topluPdfInput').value=''}}
+async function islemTamamla(){const ids=kutular().filter(x=>x.checked).map(x=>Number(x.value));if(!ids.length)return toast('En az bir fatura seçin','error');const r=await apiFetch('/api/toplu-atama/tamamla','POST',{fatura_idleri:ids});if(r.basarili){toast(`${r.tamamlanan} fatura listeden çıkarıldı`,'success');setTimeout(()=>location.reload(),700)}else toast(r.hata||'İşlem tamamlanamadı','error')}
+tabloFiltrele();
+</script>{% endblock %}

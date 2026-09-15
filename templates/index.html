@@ -1,9 +1,0 @@
-{% extends 'base.html' %}{% block content %}
-<section class="hero"><div><p class="eyebrow">FATURA MERKEZİ</p><h1>Kontrollü ve izlenebilir onay</h1><p>PDF’yi görüntü için, XML’i güvenilir veri kaynağı olarak birlikte yükleyebilirsiniz.</p></div>
-<form class="upload" method="post" action="{{ url_for('upload') }}" enctype="multipart/form-data"><label>PDF / XML / HTML<input type="file" name="documents" accept=".pdf,.xml,.html,.htm" multiple required></label><button>Dosyaları Oku</button></form></section>
-<section class="panel"><div class="panel-title"><h2>Faturalar</h2><span>{{ invoices|length }} kayıt</span></div>
-<div class="table-wrap"><table><thead><tr><th>Fatura No</th><th>Firma</th><th>Tutar</th><th>Kaynak</th><th>Durum</th></tr></thead><tbody>
-{% for i in invoices %}<tr onclick="location.href='{{ url_for('detail', invoice_id=i.id) }}'"><td>{{ i.invoice_number or 'Kontrol gerekli' }}</td><td>{{ i.supplier_name or 'Okunamadı' }}</td><td>{{ '%.2f'|format(i.grand_total or 0) }} {{ i.currency }}</td><td><span class="tag">{{ i.source_type|upper }}</span></td><td><span class="status {{ i.status }}">{{ i.status.replace('_',' ') }}</span></td></tr>{% else %}<tr><td colspan="5" class="empty">Henüz fatura yüklenmedi.</td></tr>{% endfor %}
-</tbody></table></div></section>
-{% endblock %}
-

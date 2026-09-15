@@ -1,0 +1,247 @@
+{% extends "base.html" %}
+{% block title %}Muhasebe Paneli{% endblock %}
+
+{% block extra_css %}
+<style>
+    .ozet-tablo {
+        width: 100%;
+        border-collapse: collapse;
+        font-size: 13px;
+    }
+
+    .ozet-tablo thead tr {
+        background: var(--surface2);
+    }
+
+    .ozet-tablo th {
+        padding: 10px 14px;
+        text-align: left;
+        font-size: 11px;
+        text-transform: uppercase;
+        letter-spacing: 0.8px;
+        color: var(--text2);
+        font-weight: 700;
+        border-bottom: 1px solid var(--border);
+    }
+
+    .ozet-tablo td {
+        padding: 10px 14px;
+        border-bottom: 1px solid rgba(46,50,73,0.5);
+        color: var(--text);
+        vertical-align: middle;
+    }
+
+    .ozet-tablo tr:hover td { background: rgba(79,110,247,0.04); }
+
+    .mono { font-family: 'Consolas', monospace; }
+
+    .onaylayan-chip {
+        display: inline-flex;
+        align-items: center;
+        gap: 6px;
+        background: var(--surface2);
+        border: 1px solid var(--border);
+        border-radius: 20px;
+        padding: 3px 10px;
+        font-size: 12px;
+    }
+
+    .onaylayan-avatar {
+        width: 22px;
+        height: 22px;
+        border-radius: 50%;
+        background: var(--accent);
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        font-size: 10px;
+        font-weight: 700;
+        color: white;
+    }
+
+    .proje-tag {
+        display: inline-block;
+        background: rgba(79,110,247,0.12);
+        color: var(--accent2);
+        border: 1px solid rgba(79,110,247,0.25);
+        border-radius: 4px;
+        padding: 2px 7px;
+        font-size: 11px;
+        font-weight: 600;
+        margin: 1px;
+    }
+
+    .stat-grid {
+        display: grid;
+        grid-template-columns: repeat(auto-fit, minmax(160px, 1fr));
+        gap: 14px;
+        margin-bottom: 24px;
+    }
+
+    .stat-kart {
+        background: var(--surface);
+        border: 1px solid var(--border);
+        border-radius: 10px;
+        padding: 16px;
+    }
+
+    .stat-label { font-size: 11px; color: var(--text2); text-transform: uppercase; letter-spacing: 0.8px; margin-bottom: 6px; }
+    .stat-deger { font-size: 24px; font-weight: 700; color: var(--text); }
+    .stat-alt { font-size: 12px; color: var(--text2); margin-top: 4px; }
+
+    .toolbar { display: flex; gap: 10px; margin-bottom: 20px; align-items: center; flex-wrap: wrap; }
+    .arama { flex: 1; min-width: 200px; }
+</style>
+{% endblock %}
+
+{% block topbar %}
+<div class="topbar">
+    <span class="topbar-title">✅ Muhasebe Paneli</span>
+    <div class="topbar-actions">
+        <a href="/api/river-export" class="btn btn-green btn-sm">⬇ River Excel İndir</a>
+    </div>
+</div>
+{% endblock %}
+
+{% block content %}
+
+<!-- İSTATİSTİKLER -->
+<div class="stat-grid">
+    <div class="stat-kart">
+        <div class="stat-label">Onaylı Fatura</div>
+        <div class="stat-deger">{{ faturalar|length }}</div>
+        <div class="stat-alt">toplam</div>
+    </div>
+    <div class="stat-kart">
+        <div class="stat-label">Toplam Tutar</div>
+        <div class="stat-deger mono">
+            {% set toplam = namespace(v=0) %}
+            {% for f in faturalar %}{% if f.tutar %}{% set toplam.v = toplam.v + f.tutar %}{% endif %}{% endfor %}
+            {{ '{:,.0f}'.format(toplam.v) }}
+        </div>
+        <div class="stat-alt">TRY</div>
+    </div>
+    <div class="stat-kart">
+        <div class="stat-label">Bugün Onaylanan</div>
+        <div class="stat-deger">
+            {% set bugun = namespace(v=0) %}
+            {% for f in faturalar %}
+                {% if f.onay_tarihi and f.onay_tarihi.date() == now.date() %}
+                    {% set bugun.v = bugun.v + 1 %}
+                {% endif %}
+            {% endfor %}
+            {{ bugun.v }}
+        </div>
+        <div class="stat-alt">adet</div>
+    </div>
+</div>
+
+<!-- TOOLBAR -->
+<div class="toolbar">
+    <input type="text" class="form-control arama" id="aramaInput"
+        placeholder="Fatura no, firma, proje ara..." oninput="filtrele()">
+    <button class="btn btn-ghost btn-sm" onclick="tamaminiSec()">Tümünü Seç</button>
+    <button class="btn btn-green btn-sm" onclick="secilenExcel()">⬇ Seçilenleri İndir</button>
+</div>
+
+<!-- TABLO -->
+<div class="card" style="padding:0;overflow:hidden">
+    <table class="ozet-tablo" id="ozetTablo">
+        <thead>
+            <tr>
+                <th><input type="checkbox" id="tumSec" onchange="tumunuSec(this)"></th>
+                <th>#</th>
+                <th>Fatura No</th>
+                <th>Tarih</th>
+                <th>Firma</th>
+                <th>Tutar</th>
+                <th>Ana Proje</th>
+                <th>Alt Proje</th>
+                <th>Not</th>
+                <th>Onaylayan</th>
+                <th>Dept</th>
+                <th>Onay T.</th>
+                <th>PDF</th>
+            </tr>
+        </thead>
+        <tbody>
+            {% for f in faturalar %}
+            <tr>
+                <td><input type="checkbox" class="satir-sec" value="{{ f.id }}"></td>
+                <td style="color:var(--text2);font-size:11px">{{ loop.index }}</td>
+                <td class="mono">{{ f.fatura_no or '—' }}</td>
+                <td>{{ f.fatura_tarihi or '—' }}</td>
+                <td style="max-width:160px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">
+                    {{ f.firma_adi or '—' }}
+                </td>
+                <td class="mono">
+                    {% if f.tutar %}
+                        {{ '{:,.2f}'.format(f.tutar) }} {{ f.para_birimi }}
+                    {% else %}—{% endif %}
+                </td>
+                <td>
+                    {% if f.ana_proje %}
+                    <span class="proje-tag">{{ f.ana_proje.kod }}</span>
+                    {% else %}—{% endif %}
+                </td>
+                <td>
+                    {% if f.alt_proje %}
+                    <span class="proje-tag">{{ f.alt_proje.kod }}</span>
+                    {% else %}—{% endif %}
+                </td>
+                <td style="max-width:140px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;color:var(--text2);font-size:12px">
+                    {{ f.not_alani or '—' }}
+                </td>
+                <td>
+                    {% if f.onaylayan %}
+                    <div class="onaylayan-chip">
+                        <div class="onaylayan-avatar">{{ f.onaylayan.kisaltma }}</div>
+                        {{ f.onaylayan.ad_soyad.split()[0] }}
+                    </div>
+                    {% else %}—{% endif %}
+                </td>
+                <td>
+                    {% if f.departman %}
+                    <span class="durum onaylandi" style="font-size:11px">{{ f.departman.kod }}</span>
+                    {% else %}—{% endif %}
+                </td>
+                <td style="font-size:11px;color:var(--text2)">
+                    {{ f.onay_tarihi.strftime('%d.%m.%y') if f.onay_tarihi else '—' }}
+                </td>
+                <td>
+                    <a href="/uploads/{{ f.dosya_adi }}" target="_blank" class="btn btn-ghost btn-sm">📄</a>
+                </td>
+            </tr>
+            {% endfor %}
+        </tbody>
+    </table>
+</div>
+
+{% endblock %}
+
+{% block extra_js %}
+<script>
+function filtrele() {
+    const q = document.getElementById('aramaInput').value.toLowerCase();
+    document.querySelectorAll('#ozetTablo tbody tr').forEach(tr => {
+        tr.style.display = tr.textContent.toLowerCase().includes(q) ? '' : 'none';
+    });
+}
+
+function tumunuSec(cb) {
+    document.querySelectorAll('.satir-sec').forEach(c => c.checked = cb.checked);
+}
+
+function tamaminiSec() {
+    document.querySelectorAll('.satir-sec').forEach(c => c.checked = true);
+    document.getElementById('tumSec').checked = true;
+}
+
+function secilenExcel() {
+    const secilen = [...document.querySelectorAll('.satir-sec:checked')].map(c => c.value);
+    if (!secilen.length) { toast('Lütfen en az bir fatura seçin', 'error'); return; }
+    // Seçilenleri filtreli export için şimdilik tümünü indir
+    window.location.href = '/api/river-export';
+}
+</script>
+{% endblock %}

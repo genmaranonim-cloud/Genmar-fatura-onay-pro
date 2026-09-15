@@ -1,0 +1,1278 @@
+{% extends "base.html" %}
+{% block title %}Kullanıcı Yönetimi{% endblock %}
+
+{% block extra_css %}
+<style>
+    .yonetim-grid {
+        display: grid;
+        grid-template-columns: 1fr 1fr;
+        gap: 24px;
+    }
+
+    @media (max-width: 900px) { .yonetim-grid { grid-template-columns: 1fr; } }
+
+    .panel-baslik {
+        font-size: 13px;
+        font-weight: 700;
+        text-transform: uppercase;
+        letter-spacing: 0.8px;
+        color: var(--text2);
+        margin-bottom: 16px;
+        padding-bottom: 10px;
+        border-bottom: 1px solid var(--border);
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+    }
+
+    .liste {
+        display: flex;
+        flex-direction: column;
+        gap: 8px;
+        margin-bottom: 20px;
+        max-height: 340px;
+        overflow-y: auto;
+    }
+
+    .liste-item {
+        display: flex;
+        align-items: center;
+        gap: 12px;
+        padding: 10px 14px;
+        background: var(--surface2);
+        border: 1px solid var(--border);
+        border-radius: 8px;
+        transition: border-color 0.15s;
+    }
+
+    .liste-item:hover { border-color: var(--accent); }
+
+    .avatar {
+        width: 34px;
+        height: 34px;
+        border-radius: 50%;
+        background: var(--accent);
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        font-size: 13px;
+        font-weight: 700;
+        color: white;
+        flex-shrink: 0;
+    }
+
+    .item-info { flex: 1; min-width: 0; }
+    .item-ad { font-size: 14px; font-weight: 600; color: var(--text); }
+    .item-alt { font-size: 12px; color: var(--text2); margin-top: 2px; }
+
+    .item-actions { display: flex; gap: 6px; }
+
+    .dept-badge {
+        background: rgba(79,110,247,0.12);
+        color: var(--accent2);
+        border: 1px solid rgba(79,110,247,0.25);
+        border-radius: 6px;
+        padding: 3px 8px;
+        font-size: 11px;
+        font-weight: 700;
+    }
+
+    .ekle-form {
+        background: var(--surface2);
+        border: 1px solid var(--border);
+        border-radius: 10px;
+        padding: 16px;
+        display: flex;
+        flex-direction: column;
+        gap: 12px;
+    }
+
+    .form-row {
+        display: grid;
+        grid-template-columns: 1fr 1fr;
+        gap: 10px;
+    }
+
+    .proje-agac { display: flex; flex-direction: column; gap: 6px; }
+
+    .ana-proje-item {
+        background: var(--surface2);
+        border: 1px solid var(--border);
+        border-radius: 8px;
+        overflow: hidden;
+    }
+
+    .ana-proje-baslik {
+        display: flex;
+        align-items: center;
+        gap: 10px;
+        padding: 10px 14px;
+        cursor: pointer;
+        transition: background 0.15s;
+    }
+
+    .ana-proje-baslik:hover { background: rgba(79,110,247,0.06); }
+
+    .ana-proje-ikon { font-size: 12px; color: var(--text2); transition: transform 0.2s; }
+    .ana-proje-ikon.acik { transform: rotate(90deg); }
+
+    .alt-projeler-listesi {
+        display: none;
+        padding: 0 14px 10px 36px;
+        flex-direction: column;
+        gap: 6px;
+    }
+
+    .alt-projeler-listesi.acik { display: flex; }
+
+    .alt-proje-item {
+        display: flex;
+        align-items: center;
+        gap: 10px;
+        padding: 7px 10px;
+        background: var(--bg);
+        border: 1px solid var(--border);
+        border-radius: 6px;
+    }
+
+    .alt-proje-item .item-info { font-size: 13px; }
+
+    .alt-ekle-satir {
+        display: flex;
+        gap: 8px;
+        margin-top: 4px;
+        padding: 6px 10px;
+        background: rgba(79,110,247,0.05);
+        border: 1px dashed rgba(79,110,247,0.25);
+        border-radius: 6px;
+    }
+
+    .aktif-toggle {
+        width: 36px;
+        height: 20px;
+        border-radius: 10px;
+        background: var(--border);
+        border: none;
+        cursor: pointer;
+        position: relative;
+        transition: background 0.2s;
+        flex-shrink: 0;
+    }
+
+    .aktif-toggle::after {
+        content: '';
+        position: absolute;
+        width: 14px;
+        height: 14px;
+        background: white;
+        border-radius: 50%;
+        top: 3px;
+        left: 3px;
+        transition: left 0.2s;
+    }
+
+    .aktif-toggle.aktif { background: var(--green); }
+    .aktif-toggle.aktif::after { left: 19px; }
+
+    .upload-zone-mini {
+        border: 1.5px dashed var(--border);
+        border-radius: 8px;
+        padding: 16px;
+        display: flex;
+        flex-direction: column;
+        align-items: center;
+        gap: 6px;
+        cursor: pointer;
+        transition: all 0.2s;
+    }
+    .upload-zone-mini:hover, .upload-zone-mini.drag-over {
+        border-color: var(--accent);
+        background: rgba(79,110,247,0.05);
+    }
+
+    .bos-liste {
+        text-align: center;
+        padding: 24px;
+        color: var(--text2);
+        font-size: 13px;
+    }
+</style>
+{% endblock %}
+
+{% block topbar %}
+<div class="topbar">
+    <span class="topbar-title">👤 Kullanıcı & Proje Yönetimi</span>
+</div>
+{% endblock %}
+
+{% block content %}
+<div class="yonetim-grid">
+
+    <!-- ─── KULLANICILAR ─── -->
+    <div class="card">
+        <div class="panel-baslik">
+            <span>Kullanıcılar</span>
+            <span style="color:var(--accent2);font-size:12px" id="kullaniciSayisi"></span>
+        </div>
+
+        <div class="liste" id="kullaniciListe">
+            <div class="bos-liste">Yükleniyor...</div>
+        </div>
+
+        <div style="display:grid;grid-template-columns:1fr 1fr;gap:12px">
+            <div class="ekle-form">
+                <div style="font-size:12px;color:var(--text2);font-weight:600">✏️ Manuel Ekle</div>
+                <div class="form-group">
+                    <label class="form-label">Ad Soyad</label>
+                    <input type="text" class="form-control" id="yeniKullaniciAd" placeholder="Ali Veli">
+                </div>
+                <div class="form-group">
+                    <label class="form-label">E-posta</label>
+                    <input type="email" class="form-control" id="yeniKullaniciEmail" placeholder="kullanici@genmar.com.tr">
+                </div>
+                <div class="form-group">
+                    <label class="form-label">Departman</label>
+                    <select class="form-control" id="yeniKullaniciDept">
+                        <option value="">Seçiniz...</option>
+                    </select>
+                </div>
+                <button class="btn btn-primary btn-sm" onclick="kullaniciEkle()">+ Ekle</button>
+            </div>
+            <div class="ekle-form" style="border-color:rgba(79,110,247,0.3)">
+                <div style="font-size:12px;color:var(--text2);font-weight:600">📊 Excel'den Yükle</div>
+                <div style="font-size:12px;color:var(--text2);line-height:1.6">Şablonu indirin, departman + kullanıcıları doldurup yükleyin.</div>
+                <a href="/api/kullanici-sablon-indir" class="btn btn-ghost btn-sm" style="text-align:center">⬇ Şablonu İndir</a>
+                <div class="upload-zone-mini" id="kulZone"
+                     onclick="document.getElementById('kulExcelInput').click()"
+                     ondragover="event.preventDefault();this.classList.add('drag-over')"
+                     ondragleave="this.classList.remove('drag-over')"
+                     ondrop="event.preventDefault();this.classList.remove('drag-over');kulExcelYukle(event.dataTransfer.files[0])">
+                    <input type="file" id="kulExcelInput" accept=".xlsx,.xls" style="display:none"
+                           onchange="kulExcelYukle(this.files[0])">
+                    <span style="font-size:22px">📂</span>
+                    <span style="font-size:13px;color:var(--text2)">Excel seç veya sürükle</span>
+                </div>
+                <div id="kulImportSonuc" style="display:none;font-size:12px;padding:8px 12px;border-radius:6px"></div>
+            </div>
+        </div>
+    </div>
+
+    <!-- ─── DEPARTMANLAR ─── -->
+    <div class="card">
+        <div class="panel-baslik">
+            <span>Departmanlar</span>
+        </div>
+
+        <div class="liste" id="departmanListe">
+            <div class="bos-liste">Yükleniyor...</div>
+        </div>
+
+        <div style="display:grid;grid-template-columns:1fr 1fr;gap:12px">
+            <div class="ekle-form">
+                <div style="font-size:12px;color:var(--text2);font-weight:600">✏️ Manuel Ekle</div>
+                <div class="form-row">
+                    <div class="form-group">
+                        <label class="form-label">Kod</label>
+                        <input type="text" class="form-control" id="yeniDeptKod" placeholder="ASA" maxlength="10">
+                    </div>
+                    <div class="form-group">
+                        <label class="form-label">Ad</label>
+                        <input type="text" class="form-control" id="yeniDeptAd" placeholder="Aftermarket Satış">
+                    </div>
+                </div>
+                <button class="btn btn-primary btn-sm" onclick="departmanEkle()">+ Ekle</button>
+            </div>
+            <div class="ekle-form" style="border-color:rgba(79,110,247,0.3)">
+                <div style="font-size:12px;color:var(--text2);font-weight:600">📊 Excel'den Yükle</div>
+                <div style="font-size:12px;color:var(--text2);line-height:1.6">Aynı şablon dosyasını kullanın.<br>Departmanlar sayfasını doldurun.</div>
+                <a href="/api/kullanici-sablon-indir" class="btn btn-ghost btn-sm" style="text-align:center">⬇ Şablonu İndir</a>
+                <div class="upload-zone-mini" id="deptZone"
+                     onclick="document.getElementById('deptExcelInput').click()"
+                     ondragover="event.preventDefault();this.classList.add('drag-over')"
+                     ondragleave="this.classList.remove('drag-over')"
+                     ondrop="event.preventDefault();this.classList.remove('drag-over');kulExcelYukle(event.dataTransfer.files[0])">
+                    <input type="file" id="deptExcelInput" accept=".xlsx,.xls" style="display:none"
+                           onchange="kulExcelYukle(this.files[0])">
+                    <span style="font-size:22px">📂</span>
+                    <span style="font-size:13px;color:var(--text2)">Excel seç veya sürükle</span>
+                </div>
+                <div id="deptImportSonuc" style="display:none;font-size:12px;padding:8px 12px;border-radius:6px"></div>
+            </div>
+        </div>
+    </div>
+
+    <!-- ─── ANA PROJE KODLARI ─── -->
+    <div class="card" style="grid-column: 1 / -1;">
+        <div class="panel-baslik">
+            <span>Proje Kodları</span>
+            <span style="color:var(--text2);font-size:11px">Ana proje → Alt proje</span>
+        </div>
+
+        <div class="proje-agac" id="projeAgaci">
+            <div class="bos-liste">Yükleniyor...</div>
+        </div>
+
+        <div style="display:grid;grid-template-columns:1fr 1fr;gap:16px;margin-top:16px">
+            <!-- Manuel Ekle -->
+            <div class="ekle-form">
+                <div style="font-size:12px;color:var(--text2);font-weight:600">✏️ Manuel Ana Proje Ekle</div>
+                <div class="form-row">
+                    <div class="form-group">
+                        <label class="form-label">Kod</label>
+                        <input type="text" class="form-control" id="yeniAnaKod" placeholder="YAT-2026">
+                    </div>
+                    <div class="form-group">
+                        <label class="form-label">Ad</label>
+                        <input type="text" class="form-control" id="yeniAnaAd" placeholder="Yatırım 2026">
+                    </div>
+                </div>
+                <button class="btn btn-primary btn-sm" onclick="anaProjeEkle()">+ Ana Proje Ekle</button>
+            </div>
+
+            <!-- Excel Import -->
+            <div class="ekle-form" style="border-color:rgba(79,110,247,0.3)">
+                <div style="font-size:12px;color:var(--text2);font-weight:600">📊 Excel'den Toplu Yükle</div>
+                <div style="font-size:12px;color:var(--text2);line-height:1.6">
+                    Şablonu indirin, doldurun, yükleyin.<br>
+                    Ana + alt projeler tek seferde içeri alınır.
+                </div>
+                <a href="/api/proje-sablon-indir" class="btn btn-ghost btn-sm" style="text-align:center">
+                    ⬇ Şablonu İndir (.xlsx)
+                </a>
+                <div class="upload-zone-mini" id="excelZone"
+                     onclick="document.getElementById('excelInput').click()"
+                     ondragover="event.preventDefault();this.classList.add('drag-over')"
+                     ondragleave="this.classList.remove('drag-over')"
+                     ondrop="event.preventDefault();this.classList.remove('drag-over');excelYukle(event.dataTransfer.files[0])">
+                    <input type="file" id="excelInput" accept=".xlsx,.xls" style="display:none"
+                           onchange="excelYukle(this.files[0])">
+                    <span style="font-size:22px">📂</span>
+                    <span style="font-size:13px;color:var(--text2)">Excel dosyası seç veya sürükle</span>
+                </div>
+                <div id="importSonuc" style="display:none;font-size:12px;padding:8px 12px;border-radius:6px;margin-top:4px"></div>
+            </div>
+        </div>
+    </div>
+
+</div>
+
+<!-- Kullanıcı Düzenleme Modal -->
+<div class="modal-overlay" id="kulDuzenleModal">
+    <div class="modal" style="max-width:400px;">
+        <div class="modal-header">
+            <h3>Kullanıcı Düzenle</h3>
+            <button class="btn btn-ghost btn-sm" onclick="kulDuzenleKapat()">✕</button>
+        </div>
+        <div style="padding:20px;display:flex;flex-direction:column;gap:14px;">
+            <input type="hidden" id="duzenleKulId">
+            <div class="form-group">
+                <label class="form-label">Ad Soyad</label>
+                <input type="text" class="form-control" id="duzenleKulAd" placeholder="Ad Soyad">
+            </div>
+            <div class="form-group">
+                <label class="form-label">E-posta</label>
+                <input type="email" class="form-control" id="duzenleKulEmail" placeholder="kullanici@genmar.com.tr">
+            </div>
+            <div class="form-group">
+                <label class="form-label">Departman</label>
+                <select class="form-control" id="duzenleKulDept">
+                    <option value="">Seçiniz...</option>
+                </select>
+            </div>
+            <label id="gizliAtamaAlani" style="display:none;align-items:flex-start;gap:10px;padding:12px;border:1px solid var(--border);border-radius:8px;cursor:pointer;">
+                <input type="checkbox" id="duzenleKulGizliAtama" style="margin-top:3px;">
+                <span><strong>Atanan faturaları özel tut</strong><br><small style="color:var(--text2)">Bu kullanıcıya atanan faturaları yalnızca kullanıcı ve yönetici görebilir.</small></span>
+            </label>
+            <button class="btn btn-primary" onclick="kullaniciGuncelle()">💾 Kaydet</button>
+        </div>
+    </div>
+</div>
+
+<!-- Departman Düzenleme Modal -->
+<div class="modal-overlay" id="deptDuzenleModal">
+    <div class="modal" style="max-width:400px;">
+        <div class="modal-header">
+            <h3>Departman Düzenle</h3>
+            <button class="btn btn-ghost btn-sm" onclick="deptDuzenleKapat()">✕</button>
+        </div>
+        <div style="padding:20px;display:flex;flex-direction:column;gap:14px;">
+            <input type="hidden" id="dunzenleDeptId">
+            <div class="form-group">
+                <label class="form-label">Kod</label>
+                <input type="text" class="form-control" id="dunzenleDeptKod" placeholder="ASA" maxlength="10">
+            </div>
+            <div class="form-group">
+                <label class="form-label">Ad</label>
+                <input type="text" class="form-control" id="dunzenleDeptAd" placeholder="Aftermarket Satış">
+            </div>
+            <button class="btn btn-primary" onclick="departmanGuncelle()">💾 Kaydet</button>
+        </div>
+    </div>
+</div>
+
+<!-- Alt Proje Ekleme Modal -->
+<div class="modal-overlay" id="altProjeModal">
+    <div class="modal" style="max-width:440px;">
+        <div class="modal-header">
+            <h3>Alt Proje Ekle</h3>
+            <button class="btn btn-ghost btn-sm" onclick="altModalKapat()">✕</button>
+        </div>
+        <div style="padding:20px;display:flex;flex-direction:column;gap:14px;">
+            <div style="color:var(--text2);font-size:13px">Ana Proje: <strong id="altModalAnaAd" style="color:var(--accent2)"></strong></div>
+            <div class="form-group">
+                <label class="form-label">Alt Proje Kodu</label>
+                <input type="text" class="form-control" id="altKod" placeholder="PAZ">
+            </div>
+            <div class="form-group">
+                <label class="form-label">Alt Proje Adı</label>
+                <input type="text" class="form-control" id="altAd" placeholder="Pazarlama">
+            </div>
+            <input type="hidden" id="altAnaProjeId">
+            <button class="btn btn-primary" onclick="altProjeEkle()">+ Ekle</button>
+        </div>
+    </div>
+</div>
+
+{% endblock %}
+
+{% block extra_js %}
+<script type="text/plain" id="eskiYonetimKodu">
+// ─── VERİ YüKLE ───
+// ─── KULLANICI DÜZENLE ───
+function kullaniciDuzenle(id, ad, deptId, email) {
+    document.getElementById('duzenleKulId').value = id;
+    document.getElementById('duzenleKulAd').value = ad;
+    document.getElementById('duzenleKulEmail').value = email || '';
+    // Departman dropdown'ını doldur
+    apiFetch('/api/yonetim/departmanlar').then(liste => {
+        const sel = document.getElementById('duzenleKulDept');
+        sel.innerHTML = '<option value="">Seçiniz...</option>' +
+            liste.map(d => `<option value="${d.id}" ${d.id==deptId?'selected':''}>${d.kod} — ${d.ad}</option>`).join('');
+    });
+    document.getElementById('kulDuzenleModal').classList.add('open');
+}
+
+function kulDuzenleKapat() {
+    document.getElementById('kulDuzenleModal').classList.remove('open');
+}
+
+async function kullaniciGuncelle() {
+    const id = document.getElementById('duzenleKulId').value;
+    const ad = document.getElementById('duzenleKulAd').value.trim();
+    const email = document.getElementById('duzenleKulEmail').value.trim();
+    const deptId = document.getElementById('duzenleKulDept').value;
+    if(!ad) { toast('Ad Soyad boş olamaz','error'); return; }
+    const res = await apiFetch(`/api/yonetim/kullanici-guncelle/${id}`, 'POST', {
+        ad_soyad: ad, email, departman_id: deptId || null
+    });
+    if(res.basarili) { toast('Güncellendi','success'); kulDuzenleKapat(); veriYukle(); }
+    else toast(res.hata||'Hata','error');
+}
+
+// ─── DEPARTMAN DÜZENLE ───
+function departmanDuzenle(id, kod, ad) {
+    document.getElementById('dunzenleDeptId').value = id;
+    document.getElementById('dunzenleDeptKod').value = kod;
+    document.getElementById('dunzenleDeptAd').value = ad;
+    document.getElementById('deptDuzenleModal').classList.add('open');
+}
+
+function deptDuzenleKapat() {
+    document.getElementById('deptDuzenleModal').classList.remove('open');
+}
+
+async function departmanGuncelle() {
+    const id = document.getElementById('dunzenleDeptId').value;
+    const kod = document.getElementById('dunzenleDeptKod').value.trim().toUpperCase();
+    const ad = document.getElementById('dunzenleDeptAd').value.trim();
+    if(!kod || !ad) { toast('Kod ve Ad boş olamaz','error'); return; }
+    const res = await apiFetch(`/api/yonetim/departman-guncelle/${id}`, 'POST', { kod, ad });
+    if(res.basarili) { toast('Güncellendi','success'); deptDuzenleKapat(); veriYukle(); }
+    else toast(res.hata||'Hata','error');
+}
+
+// Modal dışına tıklayınca kapat
+document.getElementById('kulDuzenleModal').addEventListener('click', function(e) { if(e.target===this) kulDuzenleKapat(); });
+document.getElementById('deptDuzenleModal').addEventListener('click', function(e) { if(e.target===this) deptDuzenleKapat(); });
+
+async function veriYukle() {
+    const [kullanicilar, departmanlar, projeler] = await Promise.all([
+        apiFetch('/api/yonetim/kullanicilar'),
+        apiFetch('/api/yonetim/departmanlar'),
+        apiFetch('/api/yonetim/projeler'),
+    ]);
+
+    renderKullanicilar(kullanicilar);
+    renderDepartmanlar(departmanlar);
+    renderProjeler(projeler);
+    deptDropdownDoldur(departmanlar);
+}
+
+// ─── KULLANICILAR ───
+function renderKullanicilar(liste) {
+    document.getElementById('kullaniciSayisi').textContent = `${liste.length} kullanıcı`;
+    const el = document.getElementById('kullaniciListe');
+    if (!liste.length) { el.innerHTML = '<div class="bos-liste">Henüz kullanıcı yok</div>'; return; }
+    liste = [...liste].sort((a,b) => a.ad_soyad.localeCompare(b.ad_soyad, 'tr'));
+    el.innerHTML = liste.map(k => `
+        <div class="liste-item">
+            <div class="avatar">${kisaltma(k.ad_soyad)}</div>
+            <div class="item-info">
+                <div class="item-ad">${k.ad_soyad}</div>
+                <div class="item-alt">${k.departman_ad || '—'}${k.email ? ' · ' + k.email : ''}</div>
+            </div>
+            <span class="dept-badge">${k.departman_kod || '?'}</span>
+            <div class="item-actions">
+                <button class="btn btn-ghost btn-sm" onclick="kullaniciDuzenle(${k.id}, '${k.ad_soyad}', ${k.departman_id||'null'}, '${k.email||''}')">&#9998;</button>
+                <button class="btn btn-red btn-sm" onclick="kullaniciSil(${k.id}, '${k.ad_soyad}')">✕</button>
+            </div>
+        </div>
+    `).join('');
+}
+
+function kisaltma(ad) {
+    const p = ad.trim().split(' ');
+    return p.length >= 2 ? (p[0][0] + p[p.length-1][0]).toUpperCase() : p[0][0].toUpperCase();
+}
+
+async function kullaniciEkle() {
+    const ad = document.getElementById('yeniKullaniciAd').value.trim();
+    const email = document.getElementById('yeniKullaniciEmail').value.trim();
+    const dept = document.getElementById('yeniKullaniciDept').value;
+    if (!ad) { toast('Ad Soyad girin', 'error'); return; }
+    const res = await apiFetch('/api/yonetim/kullanici-ekle', 'POST', { ad_soyad: ad, email, departman_id: dept || null });
+    if (res.basarili) {
+        toast('Kullanıcı eklendi', 'success');
+        document.getElementById('yeniKullaniciAd').value = '';
+        document.getElementById('yeniKullaniciEmail').value = '';
+        document.getElementById('yeniKullaniciDept').value = '';
+        async function excelYukle(dosya) {
+    if (!dosya) return;
+    const sonuc = document.getElementById('importSonuc');
+    sonuc.style.display = 'block';
+    sonuc.style.background = 'rgba(79,110,247,0.1)';
+    sonuc.style.color = 'var(--accent2)';
+    sonuc.textContent = '⏳ Yükleniyor...';
+
+    const form = new FormData();
+    form.append('dosya', dosya);
+    const res = await fetch('/api/proje-excel-import', { method: 'POST', body: form });
+    const data = await res.json();
+
+    if (data.basarili) {
+        sonuc.style.background = 'rgba(52,199,123,0.1)';
+        sonuc.style.color = 'var(--green)';
+        sonuc.innerHTML = `✓ ${data.ana_eklenen} ana proje, ${data.alt_eklenen} alt proje eklendi` +
+            (data.atlanan > 0 ? ` · ${data.atlanan} satır atlandı (mevcut/boş)` : '');
+        setTimeout(() => veriYukle(), 800);
+    } else {
+        sonuc.style.background = 'rgba(240,79,89,0.1)';
+        sonuc.style.color = 'var(--red)';
+        sonuc.textContent = '✗ ' + (data.hata || 'Hata oluştu');
+    }
+    document.getElementById('excelInput').value = '';
+}
+
+async function kulExcelYukle(dosya) {
+    if (!dosya) return;
+    const sonucEl = document.getElementById('kulImportSonuc') || document.getElementById('deptImportSonuc');
+    const goster = (el, msg, tip) => {
+        if (!el) return;
+        el.style.display = 'block';
+        el.style.background = tip === 'ok' ? 'rgba(52,199,123,0.1)' : tip === 'yukleniyor' ? 'rgba(79,110,247,0.1)' : 'rgba(240,79,89,0.1)';
+        el.style.color = tip === 'ok' ? 'var(--green)' : tip === 'yukleniyor' ? 'var(--accent2)' : 'var(--red)';
+        el.textContent = msg;
+    };
+    // Her iki sonuç alanını göster
+    ['kulImportSonuc','deptImportSonuc'].forEach(id => {
+        const el = document.getElementById(id);
+        if (el) goster(el, '⏳ Yükleniyor...', 'yukleniyor');
+    });
+
+    const form = new FormData();
+    form.append('dosya', dosya);
+    const res = await fetch('/api/kullanici-excel-import', { method: 'POST', body: form });
+    const data = await res.json();
+
+    ['kulImportSonuc','deptImportSonuc'].forEach(id => {
+        const el = document.getElementById(id);
+        if (!el) return;
+        if (data.basarili) {
+            goster(el, `✓ ${data.dept_eklenen} departman, ${data.kul_eklenen} kullanıcı eklendi` +
+                (data.atlanan > 0 ? ` · ${data.atlanan} satır atlandı` : ''), 'ok');
+        } else {
+            goster(el, '✗ ' + (data.hata || 'Hata oluştu'), 'hata');
+        }
+    });
+
+    if (data.basarili) setTimeout(() => veriYukle(), 800);
+    document.getElementById('kulExcelInput').value = '';
+    document.getElementById('deptExcelInput').value = '';
+}
+
+veriYukle();
+    } else { toast(res.hata || 'Hata', 'error'); }
+}
+
+async function kullaniciSil(id, ad) {
+    if (!confirm(`"${ad}" silinsin mi?`)) return;
+    const res = await apiFetch(`/api/yonetim/kullanici-sil/${id}`, 'DELETE');
+    if (res.basarili) { toast('Silindi', 'success'); async function excelYukle(dosya) {
+    if (!dosya) return;
+    const sonuc = document.getElementById('importSonuc');
+    sonuc.style.display = 'block';
+    sonuc.style.background = 'rgba(79,110,247,0.1)';
+    sonuc.style.color = 'var(--accent2)';
+    sonuc.textContent = '⏳ Yükleniyor...';
+
+    const form = new FormData();
+    form.append('dosya', dosya);
+    const res = await fetch('/api/proje-excel-import', { method: 'POST', body: form });
+    const data = await res.json();
+
+    if (data.basarili) {
+        sonuc.style.background = 'rgba(52,199,123,0.1)';
+        sonuc.style.color = 'var(--green)';
+        sonuc.innerHTML = `✓ ${data.ana_eklenen} ana proje, ${data.alt_eklenen} alt proje eklendi` +
+            (data.atlanan > 0 ? ` · ${data.atlanan} satır atlandı (mevcut/boş)` : '');
+        setTimeout(() => veriYukle(), 800);
+    } else {
+        sonuc.style.background = 'rgba(240,79,89,0.1)';
+        sonuc.style.color = 'var(--red)';
+        sonuc.textContent = '✗ ' + (data.hata || 'Hata oluştu');
+    }
+    document.getElementById('excelInput').value = '';
+}
+
+async function kulExcelYukle(dosya) {
+    if (!dosya) return;
+    const sonucEl = document.getElementById('kulImportSonuc') || document.getElementById('deptImportSonuc');
+    const goster = (el, msg, tip) => {
+        if (!el) return;
+        el.style.display = 'block';
+        el.style.background = tip === 'ok' ? 'rgba(52,199,123,0.1)' : tip === 'yukleniyor' ? 'rgba(79,110,247,0.1)' : 'rgba(240,79,89,0.1)';
+        el.style.color = tip === 'ok' ? 'var(--green)' : tip === 'yukleniyor' ? 'var(--accent2)' : 'var(--red)';
+        el.textContent = msg;
+    };
+    // Her iki sonuç alanını göster
+    ['kulImportSonuc','deptImportSonuc'].forEach(id => {
+        const el = document.getElementById(id);
+        if (el) goster(el, '⏳ Yükleniyor...', 'yukleniyor');
+    });
+
+    const form = new FormData();
+    form.append('dosya', dosya);
+    const res = await fetch('/api/kullanici-excel-import', { method: 'POST', body: form });
+    const data = await res.json();
+
+    ['kulImportSonuc','deptImportSonuc'].forEach(id => {
+        const el = document.getElementById(id);
+        if (!el) return;
+        if (data.basarili) {
+            goster(el, `✓ ${data.dept_eklenen} departman, ${data.kul_eklenen} kullanıcı eklendi` +
+                (data.atlanan > 0 ? ` · ${data.atlanan} satır atlandı` : ''), 'ok');
+        } else {
+            goster(el, '✗ ' + (data.hata || 'Hata oluştu'), 'hata');
+        }
+    });
+
+    if (data.basarili) setTimeout(() => veriYukle(), 800);
+    document.getElementById('kulExcelInput').value = '';
+    document.getElementById('deptExcelInput').value = '';
+}
+
+veriYukle(); }
+    else { toast(res.hata || 'Hata', 'error'); }
+}
+
+// ─── DEPARTMANLAR ───
+function renderDepartmanlar(liste) {
+    const el = document.getElementById('departmanListe');
+    if (!liste.length) { el.innerHTML = '<div class="bos-liste">Henüz departman yok</div>'; return; }
+    liste = [...liste].sort((a,b) => a.ad.localeCompare(b.ad, 'tr'));
+    el.innerHTML = liste.map(d => `
+        <div class="liste-item">
+            <span class="dept-badge" style="font-size:13px;padding:4px 10px">${d.kod}</span>
+            <div class="item-info">
+                <div class="item-ad">${d.ad}</div>
+            </div>
+            <button class="btn btn-ghost btn-sm" onclick="departmanDuzenle(${d.id}, '${d.kod}', '${d.ad}')">&#9998;</button>
+            <button class="btn btn-red btn-sm" onclick="departmanSil(${d.id}, '${d.kod}')">✕</button>
+        </div>
+    `).join('');
+}
+
+function deptDropdownDoldur(liste) {
+    const sel = document.getElementById('yeniKullaniciDept');
+    const mevcut = sel.value;
+    sel.innerHTML = '<option value="">Seçiniz...</option>' +
+        liste.map(d => `<option value="${d.id}">${d.kod} — ${d.ad}</option>`).join('');
+    sel.value = mevcut;
+}
+
+async function departmanEkle() {
+    const kod = document.getElementById('yeniDeptKod').value.trim().toUpperCase();
+    const ad = document.getElementById('yeniDeptAd').value.trim();
+    if (!kod || !ad) { toast('Kod ve Ad girin', 'error'); return; }
+    const res = await apiFetch('/api/yonetim/departman-ekle', 'POST', { kod, ad });
+    if (res.basarili) {
+        toast('Departman eklendi', 'success');
+        document.getElementById('yeniDeptKod').value = '';
+        document.getElementById('yeniDeptAd').value = '';
+        async function excelYukle(dosya) {
+    if (!dosya) return;
+    const sonuc = document.getElementById('importSonuc');
+    sonuc.style.display = 'block';
+    sonuc.style.background = 'rgba(79,110,247,0.1)';
+    sonuc.style.color = 'var(--accent2)';
+    sonuc.textContent = '⏳ Yükleniyor...';
+
+    const form = new FormData();
+    form.append('dosya', dosya);
+    const res = await fetch('/api/proje-excel-import', { method: 'POST', body: form });
+    const data = await res.json();
+
+    if (data.basarili) {
+        sonuc.style.background = 'rgba(52,199,123,0.1)';
+        sonuc.style.color = 'var(--green)';
+        sonuc.innerHTML = `✓ ${data.ana_eklenen} ana proje, ${data.alt_eklenen} alt proje eklendi` +
+            (data.atlanan > 0 ? ` · ${data.atlanan} satır atlandı (mevcut/boş)` : '');
+        setTimeout(() => veriYukle(), 800);
+    } else {
+        sonuc.style.background = 'rgba(240,79,89,0.1)';
+        sonuc.style.color = 'var(--red)';
+        sonuc.textContent = '✗ ' + (data.hata || 'Hata oluştu');
+    }
+    document.getElementById('excelInput').value = '';
+}
+
+async function kulExcelYukle(dosya) {
+    if (!dosya) return;
+    const sonucEl = document.getElementById('kulImportSonuc') || document.getElementById('deptImportSonuc');
+    const goster = (el, msg, tip) => {
+        if (!el) return;
+        el.style.display = 'block';
+        el.style.background = tip === 'ok' ? 'rgba(52,199,123,0.1)' : tip === 'yukleniyor' ? 'rgba(79,110,247,0.1)' : 'rgba(240,79,89,0.1)';
+        el.style.color = tip === 'ok' ? 'var(--green)' : tip === 'yukleniyor' ? 'var(--accent2)' : 'var(--red)';
+        el.textContent = msg;
+    };
+    // Her iki sonuç alanını göster
+    ['kulImportSonuc','deptImportSonuc'].forEach(id => {
+        const el = document.getElementById(id);
+        if (el) goster(el, '⏳ Yükleniyor...', 'yukleniyor');
+    });
+
+    const form = new FormData();
+    form.append('dosya', dosya);
+    const res = await fetch('/api/kullanici-excel-import', { method: 'POST', body: form });
+    const data = await res.json();
+
+    ['kulImportSonuc','deptImportSonuc'].forEach(id => {
+        const el = document.getElementById(id);
+        if (!el) return;
+        if (data.basarili) {
+            goster(el, `✓ ${data.dept_eklenen} departman, ${data.kul_eklenen} kullanıcı eklendi` +
+                (data.atlanan > 0 ? ` · ${data.atlanan} satır atlandı` : ''), 'ok');
+        } else {
+            goster(el, '✗ ' + (data.hata || 'Hata oluştu'), 'hata');
+        }
+    });
+
+    if (data.basarili) setTimeout(() => veriYukle(), 800);
+    document.getElementById('kulExcelInput').value = '';
+    document.getElementById('deptExcelInput').value = '';
+}
+
+veriYukle();
+    } else { toast(res.hata || 'Hata', 'error'); }
+}
+
+async function departmanSil(id, kod) {
+    if (!confirm(`"${kod}" silinsin mi?`)) return;
+    const res = await apiFetch(`/api/yonetim/departman-sil/${id}`, 'DELETE');
+    if (res.basarili) { toast('Silindi', 'success'); async function excelYukle(dosya) {
+    if (!dosya) return;
+    const sonuc = document.getElementById('importSonuc');
+    sonuc.style.display = 'block';
+    sonuc.style.background = 'rgba(79,110,247,0.1)';
+    sonuc.style.color = 'var(--accent2)';
+    sonuc.textContent = '⏳ Yükleniyor...';
+
+    const form = new FormData();
+    form.append('dosya', dosya);
+    const res = await fetch('/api/proje-excel-import', { method: 'POST', body: form });
+    const data = await res.json();
+
+    if (data.basarili) {
+        sonuc.style.background = 'rgba(52,199,123,0.1)';
+        sonuc.style.color = 'var(--green)';
+        sonuc.innerHTML = `✓ ${data.ana_eklenen} ana proje, ${data.alt_eklenen} alt proje eklendi` +
+            (data.atlanan > 0 ? ` · ${data.atlanan} satır atlandı (mevcut/boş)` : '');
+        setTimeout(() => veriYukle(), 800);
+    } else {
+        sonuc.style.background = 'rgba(240,79,89,0.1)';
+        sonuc.style.color = 'var(--red)';
+        sonuc.textContent = '✗ ' + (data.hata || 'Hata oluştu');
+    }
+    document.getElementById('excelInput').value = '';
+}
+
+async function kulExcelYukle(dosya) {
+    if (!dosya) return;
+    const sonucEl = document.getElementById('kulImportSonuc') || document.getElementById('deptImportSonuc');
+    const goster = (el, msg, tip) => {
+        if (!el) return;
+        el.style.display = 'block';
+        el.style.background = tip === 'ok' ? 'rgba(52,199,123,0.1)' : tip === 'yukleniyor' ? 'rgba(79,110,247,0.1)' : 'rgba(240,79,89,0.1)';
+        el.style.color = tip === 'ok' ? 'var(--green)' : tip === 'yukleniyor' ? 'var(--accent2)' : 'var(--red)';
+        el.textContent = msg;
+    };
+    // Her iki sonuç alanını göster
+    ['kulImportSonuc','deptImportSonuc'].forEach(id => {
+        const el = document.getElementById(id);
+        if (el) goster(el, '⏳ Yükleniyor...', 'yukleniyor');
+    });
+
+    const form = new FormData();
+    form.append('dosya', dosya);
+    const res = await fetch('/api/kullanici-excel-import', { method: 'POST', body: form });
+    const data = await res.json();
+
+    ['kulImportSonuc','deptImportSonuc'].forEach(id => {
+        const el = document.getElementById(id);
+        if (!el) return;
+        if (data.basarili) {
+            goster(el, `✓ ${data.dept_eklenen} departman, ${data.kul_eklenen} kullanıcı eklendi` +
+                (data.atlanan > 0 ? ` · ${data.atlanan} satır atlandı` : ''), 'ok');
+        } else {
+            goster(el, '✗ ' + (data.hata || 'Hata oluştu'), 'hata');
+        }
+    });
+
+    if (data.basarili) setTimeout(() => veriYukle(), 800);
+    document.getElementById('kulExcelInput').value = '';
+    document.getElementById('deptExcelInput').value = '';
+}
+
+veriYukle(); }
+    else { toast(res.hata || 'Hata', 'error'); }
+}
+
+// ─── PROJELER ───
+function renderProjeler(liste) {
+    const el = document.getElementById('projeAgaci');
+    if (!liste.length) { el.innerHTML = '<div class="bos-liste">Henüz proje yok</div>'; return; }
+    el.innerHTML = liste.map(p => `
+        <div class="ana-proje-item">
+            <div class="ana-proje-baslik" onclick="toggleAlt(${p.id})">
+                <span class="ana-proje-ikon" id="ikon-${p.id}">▶</span>
+                <span class="dept-badge">${p.kod}</span>
+                <div class="item-info">
+                    <div class="item-ad">${p.ad}</div>
+                    <div class="item-alt">${p.alt_projeler.length} alt proje</div>
+                </div>
+                <button class="btn btn-ghost btn-sm" onclick="event.stopPropagation();altModalAc(${p.id},'${p.kod} — ${p.ad}')">+ Alt</button>
+                <button class="btn btn-red btn-sm" onclick="event.stopPropagation();anaProjeToggle(${p.id}, ${p.aktif})">
+                    ${p.aktif ? 'Pasif' : 'Aktif'}
+                </button>
+            </div>
+            <div class="alt-projeler-listesi" id="alt-${p.id}">
+                ${p.alt_projeler.map(a => `
+                    <div class="alt-proje-item">
+                        <span class="dept-badge" style="background:rgba(52,199,123,0.1);color:var(--green);border-color:rgba(52,199,123,0.25)">${a.kod}</span>
+                        <div class="item-info">${a.ad}</div>
+                        <button class="btn btn-red btn-sm" onclick="altProjeToggle(${a.id}, ${a.aktif})">${a.aktif ? 'Pasif' : 'Aktif'}</button>
+                    </div>
+                `).join('')}
+                <div class="alt-ekle-satir" style="cursor:pointer" onclick="altModalAc(${p.id},'${p.kod} — ${p.ad}')">
+                    <span style="color:var(--accent2);font-size:12px">+ Alt proje ekle</span>
+                </div>
+            </div>
+        </div>
+    `).join('');
+}
+
+function toggleAlt(id) {
+    const el = document.getElementById(`alt-${id}`);
+    const ikon = document.getElementById(`ikon-${id}`);
+    el.classList.toggle('acik');
+    ikon.classList.toggle('acik');
+}
+
+async function anaProjeEkle() {
+    const kod = document.getElementById('yeniAnaKod').value.trim().toUpperCase();
+    const ad = document.getElementById('yeniAnaAd').value.trim();
+    if (!kod || !ad) { toast('Kod ve Ad girin', 'error'); return; }
+    const res = await apiFetch('/api/yonetim/ana-proje-ekle', 'POST', { kod, ad });
+    if (res.basarili) {
+        toast('Ana proje eklendi', 'success');
+        document.getElementById('yeniAnaKod').value = '';
+        document.getElementById('yeniAnaAd').value = '';
+        async function excelYukle(dosya) {
+    if (!dosya) return;
+    const sonuc = document.getElementById('importSonuc');
+    sonuc.style.display = 'block';
+    sonuc.style.background = 'rgba(79,110,247,0.1)';
+    sonuc.style.color = 'var(--accent2)';
+    sonuc.textContent = '⏳ Yükleniyor...';
+
+    const form = new FormData();
+    form.append('dosya', dosya);
+    const res = await fetch('/api/proje-excel-import', { method: 'POST', body: form });
+    const data = await res.json();
+
+    if (data.basarili) {
+        sonuc.style.background = 'rgba(52,199,123,0.1)';
+        sonuc.style.color = 'var(--green)';
+        sonuc.innerHTML = `✓ ${data.ana_eklenen} ana proje, ${data.alt_eklenen} alt proje eklendi` +
+            (data.atlanan > 0 ? ` · ${data.atlanan} satır atlandı (mevcut/boş)` : '');
+        setTimeout(() => veriYukle(), 800);
+    } else {
+        sonuc.style.background = 'rgba(240,79,89,0.1)';
+        sonuc.style.color = 'var(--red)';
+        sonuc.textContent = '✗ ' + (data.hata || 'Hata oluştu');
+    }
+    document.getElementById('excelInput').value = '';
+}
+
+async function kulExcelYukle(dosya) {
+    if (!dosya) return;
+    const sonucEl = document.getElementById('kulImportSonuc') || document.getElementById('deptImportSonuc');
+    const goster = (el, msg, tip) => {
+        if (!el) return;
+        el.style.display = 'block';
+        el.style.background = tip === 'ok' ? 'rgba(52,199,123,0.1)' : tip === 'yukleniyor' ? 'rgba(79,110,247,0.1)' : 'rgba(240,79,89,0.1)';
+        el.style.color = tip === 'ok' ? 'var(--green)' : tip === 'yukleniyor' ? 'var(--accent2)' : 'var(--red)';
+        el.textContent = msg;
+    };
+    // Her iki sonuç alanını göster
+    ['kulImportSonuc','deptImportSonuc'].forEach(id => {
+        const el = document.getElementById(id);
+        if (el) goster(el, '⏳ Yükleniyor...', 'yukleniyor');
+    });
+
+    const form = new FormData();
+    form.append('dosya', dosya);
+    const res = await fetch('/api/kullanici-excel-import', { method: 'POST', body: form });
+    const data = await res.json();
+
+    ['kulImportSonuc','deptImportSonuc'].forEach(id => {
+        const el = document.getElementById(id);
+        if (!el) return;
+        if (data.basarili) {
+            goster(el, `✓ ${data.dept_eklenen} departman, ${data.kul_eklenen} kullanıcı eklendi` +
+                (data.atlanan > 0 ? ` · ${data.atlanan} satır atlandı` : ''), 'ok');
+        } else {
+            goster(el, '✗ ' + (data.hata || 'Hata oluştu'), 'hata');
+        }
+    });
+
+    if (data.basarili) setTimeout(() => veriYukle(), 800);
+    document.getElementById('kulExcelInput').value = '';
+    document.getElementById('deptExcelInput').value = '';
+}
+
+veriYukle();
+    } else { toast(res.hata || 'Hata', 'error'); }
+}
+
+async function anaProjeToggle(id, aktif) {
+    const res = await apiFetch(`/api/yonetim/ana-proje-toggle/${id}`, 'POST', { aktif: !aktif });
+    if (res.basarili) { toast(aktif ? 'Pasife alındı' : 'Aktif edildi', 'success'); async function excelYukle(dosya) {
+    if (!dosya) return;
+    const sonuc = document.getElementById('importSonuc');
+    sonuc.style.display = 'block';
+    sonuc.style.background = 'rgba(79,110,247,0.1)';
+    sonuc.style.color = 'var(--accent2)';
+    sonuc.textContent = '⏳ Yükleniyor...';
+
+    const form = new FormData();
+    form.append('dosya', dosya);
+    const res = await fetch('/api/proje-excel-import', { method: 'POST', body: form });
+    const data = await res.json();
+
+    if (data.basarili) {
+        sonuc.style.background = 'rgba(52,199,123,0.1)';
+        sonuc.style.color = 'var(--green)';
+        sonuc.innerHTML = `✓ ${data.ana_eklenen} ana proje, ${data.alt_eklenen} alt proje eklendi` +
+            (data.atlanan > 0 ? ` · ${data.atlanan} satır atlandı (mevcut/boş)` : '');
+        setTimeout(() => veriYukle(), 800);
+    } else {
+        sonuc.style.background = 'rgba(240,79,89,0.1)';
+        sonuc.style.color = 'var(--red)';
+        sonuc.textContent = '✗ ' + (data.hata || 'Hata oluştu');
+    }
+    document.getElementById('excelInput').value = '';
+}
+
+async function kulExcelYukle(dosya) {
+    if (!dosya) return;
+    const sonucEl = document.getElementById('kulImportSonuc') || document.getElementById('deptImportSonuc');
+    const goster = (el, msg, tip) => {
+        if (!el) return;
+        el.style.display = 'block';
+        el.style.background = tip === 'ok' ? 'rgba(52,199,123,0.1)' : tip === 'yukleniyor' ? 'rgba(79,110,247,0.1)' : 'rgba(240,79,89,0.1)';
+        el.style.color = tip === 'ok' ? 'var(--green)' : tip === 'yukleniyor' ? 'var(--accent2)' : 'var(--red)';
+        el.textContent = msg;
+    };
+    // Her iki sonuç alanını göster
+    ['kulImportSonuc','deptImportSonuc'].forEach(id => {
+        const el = document.getElementById(id);
+        if (el) goster(el, '⏳ Yükleniyor...', 'yukleniyor');
+    });
+
+    const form = new FormData();
+    form.append('dosya', dosya);
+    const res = await fetch('/api/kullanici-excel-import', { method: 'POST', body: form });
+    const data = await res.json();
+
+    ['kulImportSonuc','deptImportSonuc'].forEach(id => {
+        const el = document.getElementById(id);
+        if (!el) return;
+        if (data.basarili) {
+            goster(el, `✓ ${data.dept_eklenen} departman, ${data.kul_eklenen} kullanıcı eklendi` +
+                (data.atlanan > 0 ? ` · ${data.atlanan} satır atlandı` : ''), 'ok');
+        } else {
+            goster(el, '✗ ' + (data.hata || 'Hata oluştu'), 'hata');
+        }
+    });
+
+    if (data.basarili) setTimeout(() => veriYukle(), 800);
+    document.getElementById('kulExcelInput').value = '';
+    document.getElementById('deptExcelInput').value = '';
+}
+
+veriYukle(); }
+}
+
+// ─── ALT PROJE MODAL ───
+function altModalAc(anaId, anaAd) {
+    document.getElementById('altAnaProjeId').value = anaId;
+    document.getElementById('altModalAnaAd').textContent = anaAd;
+    document.getElementById('altKod').value = '';
+    document.getElementById('altAd').value = '';
+    document.getElementById('altProjeModal').classList.add('open');
+}
+
+function altModalKapat() {
+    document.getElementById('altProjeModal').classList.remove('open');
+}
+
+async function altProjeEkle() {
+    const anaId = document.getElementById('altAnaProjeId').value;
+    const kod = document.getElementById('altKod').value.trim().toUpperCase();
+    const ad = document.getElementById('altAd').value.trim();
+    if (!kod || !ad) { toast('Kod ve Ad girin', 'error'); return; }
+    const res = await apiFetch('/api/yonetim/alt-proje-ekle', 'POST', { ana_proje_id: anaId, kod, ad });
+    if (res.basarili) {
+        toast('Alt proje eklendi', 'success');
+        altModalKapat();
+        async function excelYukle(dosya) {
+    if (!dosya) return;
+    const sonuc = document.getElementById('importSonuc');
+    sonuc.style.display = 'block';
+    sonuc.style.background = 'rgba(79,110,247,0.1)';
+    sonuc.style.color = 'var(--accent2)';
+    sonuc.textContent = '⏳ Yükleniyor...';
+
+    const form = new FormData();
+    form.append('dosya', dosya);
+    const res = await fetch('/api/proje-excel-import', { method: 'POST', body: form });
+    const data = await res.json();
+
+    if (data.basarili) {
+        sonuc.style.background = 'rgba(52,199,123,0.1)';
+        sonuc.style.color = 'var(--green)';
+        sonuc.innerHTML = `✓ ${data.ana_eklenen} ana proje, ${data.alt_eklenen} alt proje eklendi` +
+            (data.atlanan > 0 ? ` · ${data.atlanan} satır atlandı (mevcut/boş)` : '');
+        setTimeout(() => veriYukle(), 800);
+    } else {
+        sonuc.style.background = 'rgba(240,79,89,0.1)';
+        sonuc.style.color = 'var(--red)';
+        sonuc.textContent = '✗ ' + (data.hata || 'Hata oluştu');
+    }
+    document.getElementById('excelInput').value = '';
+}
+
+async function kulExcelYukle(dosya) {
+    if (!dosya) return;
+    const sonucEl = document.getElementById('kulImportSonuc') || document.getElementById('deptImportSonuc');
+    const goster = (el, msg, tip) => {
+        if (!el) return;
+        el.style.display = 'block';
+        el.style.background = tip === 'ok' ? 'rgba(52,199,123,0.1)' : tip === 'yukleniyor' ? 'rgba(79,110,247,0.1)' : 'rgba(240,79,89,0.1)';
+        el.style.color = tip === 'ok' ? 'var(--green)' : tip === 'yukleniyor' ? 'var(--accent2)' : 'var(--red)';
+        el.textContent = msg;
+    };
+    // Her iki sonuç alanını göster
+    ['kulImportSonuc','deptImportSonuc'].forEach(id => {
+        const el = document.getElementById(id);
+        if (el) goster(el, '⏳ Yükleniyor...', 'yukleniyor');
+    });
+
+    const form = new FormData();
+    form.append('dosya', dosya);
+    const res = await fetch('/api/kullanici-excel-import', { method: 'POST', body: form });
+    const data = await res.json();
+
+    ['kulImportSonuc','deptImportSonuc'].forEach(id => {
+        const el = document.getElementById(id);
+        if (!el) return;
+        if (data.basarili) {
+            goster(el, `✓ ${data.dept_eklenen} departman, ${data.kul_eklenen} kullanıcı eklendi` +
+                (data.atlanan > 0 ? ` · ${data.atlanan} satır atlandı` : ''), 'ok');
+        } else {
+            goster(el, '✗ ' + (data.hata || 'Hata oluştu'), 'hata');
+        }
+    });
+
+    if (data.basarili) setTimeout(() => veriYukle(), 800);
+    document.getElementById('kulExcelInput').value = '';
+    document.getElementById('deptExcelInput').value = '';
+}
+
+veriYukle();
+    } else { toast(res.hata || 'Hata', 'error'); }
+}
+
+async function altProjeToggle(id, aktif) {
+    const res = await apiFetch(`/api/yonetim/alt-proje-toggle/${id}`, 'POST', { aktif: !aktif });
+    if (res.basarili) { toast(aktif ? 'Pasife alındı' : 'Aktif edildi', 'success'); async function excelYukle(dosya) {
+    if (!dosya) return;
+    const sonuc = document.getElementById('importSonuc');
+    sonuc.style.display = 'block';
+    sonuc.style.background = 'rgba(79,110,247,0.1)';
+    sonuc.style.color = 'var(--accent2)';
+    sonuc.textContent = '⏳ Yükleniyor...';
+
+    const form = new FormData();
+    form.append('dosya', dosya);
+    const res = await fetch('/api/proje-excel-import', { method: 'POST', body: form });
+    const data = await res.json();
+
+    if (data.basarili) {
+        sonuc.style.background = 'rgba(52,199,123,0.1)';
+        sonuc.style.color = 'var(--green)';
+        sonuc.innerHTML = `✓ ${data.ana_eklenen} ana proje, ${data.alt_eklenen} alt proje eklendi` +
+            (data.atlanan > 0 ? ` · ${data.atlanan} satır atlandı (mevcut/boş)` : '');
+        setTimeout(() => veriYukle(), 800);
+    } else {
+        sonuc.style.background = 'rgba(240,79,89,0.1)';
+        sonuc.style.color = 'var(--red)';
+        sonuc.textContent = '✗ ' + (data.hata || 'Hata oluştu');
+    }
+    document.getElementById('excelInput').value = '';
+}
+
+async function kulExcelYukle(dosya) {
+    if (!dosya) return;
+    const sonucEl = document.getElementById('kulImportSonuc') || document.getElementById('deptImportSonuc');
+    const goster = (el, msg, tip) => {
+        if (!el) return;
+        el.style.display = 'block';
+        el.style.background = tip === 'ok' ? 'rgba(52,199,123,0.1)' : tip === 'yukleniyor' ? 'rgba(79,110,247,0.1)' : 'rgba(240,79,89,0.1)';
+        el.style.color = tip === 'ok' ? 'var(--green)' : tip === 'yukleniyor' ? 'var(--accent2)' : 'var(--red)';
+        el.textContent = msg;
+    };
+    // Her iki sonuç alanını göster
+    ['kulImportSonuc','deptImportSonuc'].forEach(id => {
+        const el = document.getElementById(id);
+        if (el) goster(el, '⏳ Yükleniyor...', 'yukleniyor');
+    });
+
+    const form = new FormData();
+    form.append('dosya', dosya);
+    const res = await fetch('/api/kullanici-excel-import', { method: 'POST', body: form });
+    const data = await res.json();
+
+    ['kulImportSonuc','deptImportSonuc'].forEach(id => {
+        const el = document.getElementById(id);
+        if (!el) return;
+        if (data.basarili) {
+            goster(el, `✓ ${data.dept_eklenen} departman, ${data.kul_eklenen} kullanıcı eklendi` +
+                (data.atlanan > 0 ? ` · ${data.atlanan} satır atlandı` : ''), 'ok');
+        } else {
+            goster(el, '✗ ' + (data.hata || 'Hata oluştu'), 'hata');
+        }
+    });
+
+    if (data.basarili) setTimeout(() => veriYukle(), 800);
+    document.getElementById('kulExcelInput').value = '';
+    document.getElementById('deptExcelInput').value = '';
+}
+
+veriYukle(); }
+}
+
+document.getElementById('altProjeModal').addEventListener('click', function(e) {
+    if (e.target === this) altModalKapat();
+});
+
+async function excelYukle(dosya) {
+    if (!dosya) return;
+    const sonuc = document.getElementById('importSonuc');
+    sonuc.style.display = 'block';
+    sonuc.style.background = 'rgba(79,110,247,0.1)';
+    sonuc.style.color = 'var(--accent2)';
+    sonuc.textContent = '⏳ Yükleniyor...';
+
+    const form = new FormData();
+    form.append('dosya', dosya);
+    const res = await fetch('/api/proje-excel-import', { method: 'POST', body: form });
+    const data = await res.json();
+
+    if (data.basarili) {
+        sonuc.style.background = 'rgba(52,199,123,0.1)';
+        sonuc.style.color = 'var(--green)';
+        sonuc.innerHTML = `✓ ${data.ana_eklenen} ana proje, ${data.alt_eklenen} alt proje eklendi` +
+            (data.atlanan > 0 ? ` · ${data.atlanan} satır atlandı (mevcut/boş)` : '');
+        setTimeout(() => veriYukle(), 800);
+    } else {
+        sonuc.style.background = 'rgba(240,79,89,0.1)';
+        sonuc.style.color = 'var(--red)';
+        sonuc.textContent = '✗ ' + (data.hata || 'Hata oluştu');
+    }
+    document.getElementById('excelInput').value = '';
+}
+
+async function kulExcelYukle(dosya) {
+    if (!dosya) return;
+    const sonucEl = document.getElementById('kulImportSonuc') || document.getElementById('deptImportSonuc');
+    const goster = (el, msg, tip) => {
+        if (!el) return;
+        el.style.display = 'block';
+        el.style.background = tip === 'ok' ? 'rgba(52,199,123,0.1)' : tip === 'yukleniyor' ? 'rgba(79,110,247,0.1)' : 'rgba(240,79,89,0.1)';
+        el.style.color = tip === 'ok' ? 'var(--green)' : tip === 'yukleniyor' ? 'var(--accent2)' : 'var(--red)';
+        el.textContent = msg;
+    };
+    // Her iki sonuç alanını göster
+    ['kulImportSonuc','deptImportSonuc'].forEach(id => {
+        const el = document.getElementById(id);
+        if (el) goster(el, '⏳ Yükleniyor...', 'yukleniyor');
+    });
+
+    const form = new FormData();
+    form.append('dosya', dosya);
+    const res = await fetch('/api/kullanici-excel-import', { method: 'POST', body: form });
+    const data = await res.json();
+
+    ['kulImportSonuc','deptImportSonuc'].forEach(id => {
+        const el = document.getElementById(id);
+        if (!el) return;
+        if (data.basarili) {
+            goster(el, `✓ ${data.dept_eklenen} departman, ${data.kul_eklenen} kullanıcı eklendi` +
+                (data.atlanan > 0 ? ` · ${data.atlanan} satır atlandı` : ''), 'ok');
+        } else {
+            goster(el, '✗ ' + (data.hata || 'Hata oluştu'), 'hata');
+        }
+    });
+
+    if (data.basarili) setTimeout(() => veriYukle(), 800);
+    document.getElementById('kulExcelInput').value = '';
+    document.getElementById('deptExcelInput').value = '';
+}
+
+veriYukle();
+</script>
+<script src="{{ url_for('static', filename='yonetim.js') }}?v=20260809-1"></script>
+{% endblock %}

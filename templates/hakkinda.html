@@ -1,0 +1,251 @@
+{% extends "base.html" %}
+{% block title %}Hakkında{% endblock %}
+
+{% block extra_css %}
+<style>
+.hakkinda-kap {
+    max-width: 760px;
+    margin: 0 auto;
+    display: flex;
+    flex-direction: column;
+    gap: 20px;
+}
+
+.h-kart {
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: 12px;
+    padding: 24px;
+}
+
+.h-baslik {
+    font-size: 13px;
+    font-weight: 700;
+    text-transform: uppercase;
+    letter-spacing: 1px;
+    color: var(--accent2);
+    margin-bottom: 16px;
+    padding-bottom: 10px;
+    border-bottom: 1px solid var(--border);
+    display: flex;
+    align-items: center;
+    gap: 8px;
+}
+
+.h-logo-alan {
+    text-align: center;
+    padding: 12px 0 20px;
+}
+
+.h-logo-alan .brand {
+    font-size: 32px;
+    font-weight: 800;
+    color: var(--accent2);
+    letter-spacing: 3px;
+}
+
+.h-logo-alan .version {
+    font-size: 12px;
+    color: var(--text2);
+    margin-top: 4px;
+}
+
+.h-logo-alan .tanim {
+    font-size: 14px;
+    color: var(--text2);
+    margin-top: 8px;
+    line-height: 1.6;
+}
+
+.adim-listesi {
+    display: flex;
+    flex-direction: column;
+    gap: 10px;
+}
+
+.adim {
+    display: flex;
+    gap: 14px;
+    align-items: flex-start;
+}
+
+.adim-no {
+    width: 28px;
+    height: 28px;
+    border-radius: 50%;
+    background: rgba(79,110,247,0.15);
+    border: 1px solid rgba(79,110,247,0.3);
+    color: var(--accent2);
+    font-size: 12px;
+    font-weight: 700;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    flex-shrink: 0;
+    margin-top: 1px;
+}
+
+.adim-icerik { flex: 1; }
+.adim-baslik { font-size: 13px; font-weight: 600; color: var(--text); margin-bottom: 2px; }
+.adim-aciklama { font-size: 12px; color: var(--text2); line-height: 1.5; }
+
+.modul-grid {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 10px;
+}
+
+.modul-item {
+    background: var(--surface2);
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    padding: 12px 14px;
+    display: flex;
+    gap: 10px;
+    align-items: flex-start;
+}
+
+.modul-ikon { font-size: 18px; flex-shrink: 0; }
+.modul-ad { font-size: 13px; font-weight: 600; color: var(--text); }
+.modul-acik { font-size: 11px; color: var(--text2); margin-top: 2px; line-height: 1.4; }
+
+.telif {
+    background: rgba(79,110,247,0.06);
+    border: 1px solid rgba(79,110,247,0.2);
+    border-radius: 10px;
+    padding: 18px 20px;
+    text-align: center;
+}
+
+.telif .isim { font-size: 15px; font-weight: 700; color: var(--accent2); margin-bottom: 6px; }
+.telif .detay { font-size: 12px; color: var(--text2); line-height: 1.7; }
+.telif .yil { font-size: 20px; font-weight: 800; color: var(--border); margin: 8px 0; }
+</style>
+{% endblock %}
+
+{% block topbar %}
+<div class="topbar">
+    <span class="topbar-title">ℹ️ Hakkında</span>
+</div>
+{% endblock %}
+
+{% block content %}
+<div class="hakkinda-kap">
+
+    <!-- Logo & Tanım -->
+    <div class="h-kart">
+        <div class="h-logo-alan">
+            <div class="brand">GENMAR</div>
+            <div class="version">Fatura Onay Sistemi · v1.0 · 2026</div>
+            <div class="tanim">
+                Logo ERP'den gelen e-faturaların departman bazlı incelenmesini,<br>
+                proje kodlarıyla etiketlenmesini ve muhasebe kaydına hazırlanmasını<br>
+                tek ekranda yöneten web tabanlı onay platformu.
+            </div>
+        </div>
+    </div>
+
+    <!-- Nasıl Kullanılır -->
+    <div class="h-kart">
+        <div class="h-baslik">🚀 Nasıl Kullanılır</div>
+        <div class="adim-listesi">
+            <div class="adim">
+                <div class="adim-no">1</div>
+                <div class="adim-icerik">
+                    <div class="adim-baslik">Fatura Yükleme</div>
+                    <div class="adim-aciklama">Logo entegratörden indirilen PDF faturalar "+ PDF Yükle" butonu ile sisteme sürükle-bırak yöntemiyle veya network klasörü taranarak yüklenir. Dosya adından fatura numarası ve firma adı otomatik okunur.</div>
+                </div>
+            </div>
+            <div class="adim">
+                <div class="adim-no">2</div>
+                <div class="adim-icerik">
+                    <div class="adim-baslik">İnceleme ve Onay</div>
+                    <div class="adim-aciklama">Servis, satış ve idari ekip faturaları albüm görünümünde tek tek açar. Her faturaya ana proje kodu, alt proje kodu, not ve ödeme notu girilir. ✓ Onayla, ! Eksik Bilgi veya ✗ Reddet seçeneklerinden biri seçilir.</div>
+                </div>
+            </div>
+            <div class="adim">
+                <div class="adim-no">3</div>
+                <div class="adim-icerik">
+                    <div class="adim-baslik">PDF Damgalama</div>
+                    <div class="adim-aciklama">Onaylanan faturalar üzerine otomatik olarak kırmızı onay damgası eklenir. Damgada proje kodu, not, onaylayan kişi, departman ve tarih bilgileri yer alır.</div>
+                </div>
+            </div>
+            <div class="adim">
+                <div class="adim-no">4</div>
+                <div class="adim-icerik">
+                    <div class="adim-baslik">Aktarım</div>
+                    <div class="adim-aciklama">Fatura başka bir kişinin onayına ihtiyaç duyuyorsa "↗ Farklı Kişiye Aktar" ile ilgili kullanıcıya yönlendirilir. Kullanıcı giriş yaptığında "Bana Aktarılanlar" sekmesinde görür.</div>
+                </div>
+            </div>
+            <div class="adim">
+                <div class="adim-no">5</div>
+                <div class="adim-icerik">
+                    <div class="adim-baslik">Muhasebe Kaydı</div>
+                    <div class="adim-aciklama">Muhasebe Paneli'nde onaylanan tüm faturalar özet tabloda listelenir. "⬇ River Excel İndir" butonu ile River programına aktarım için hazır format indirilir.</div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Modüller -->
+    <div class="h-kart">
+        <div class="h-baslik">📦 Modüller</div>
+        <div class="modul-grid">
+            <div class="modul-item">
+                <div class="modul-ikon">📥</div>
+                <div>
+                    <div class="modul-ad">Gelen Faturalar</div>
+                    <div class="modul-acik">PDF albüm görünümü, onay formu, ay/yıl filtresi</div>
+                </div>
+            </div>
+            <div class="modul-item">
+                <div class="modul-ikon">✅</div>
+                <div>
+                    <div class="modul-ad">Muhasebe Paneli</div>
+                    <div class="modul-acik">Onaylı fatura özeti, River Excel export</div>
+                </div>
+            </div>
+            <div class="modul-item">
+                <div class="modul-ikon">👤</div>
+                <div>
+                    <div class="modul-ad">Kullanıcı Yönetimi</div>
+                    <div class="modul-acik">Kullanıcı ve departman tanımları, Excel import</div>
+                </div>
+            </div>
+            <div class="modul-item">
+                <div class="modul-ikon">📂</div>
+                <div>
+                    <div class="modul-ad">Proje Kodları</div>
+                    <div class="modul-acik">Ana/alt proje ağacı, Excel toplu yükleme</div>
+                </div>
+            </div>
+            <div class="modul-item">
+                <div class="modul-ikon">🔴</div>
+                <div>
+                    <div class="modul-ad">PDF Damgalama</div>
+                    <div class="modul-acik">Onay bilgileri PDF üzerine kırmızı damga olarak eklenir</div>
+                </div>
+            </div>
+            <div class="modul-item">
+                <div class="modul-ikon">↗️</div>
+                <div>
+                    <div class="modul-ad">Fatura Aktarım</div>
+                    <div class="modul-acik">Faturayı başka kullanıcıya yönlendirme</div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Telif -->
+    <div class="telif">
+        <div class="isim">© Dilek Kaya</div>
+        <div class="yil">2026</div>
+        <div class="detay">
+            Bu yazılım <strong>Dilek Kaya</strong> tarafından tasarlanmış ve geliştirilmiştir.<br>
+            Genmar Sanayi Ürünleri Pazarlama A.Ş. bünyesinde kullanılmak üzere üretilmiştir.<br>
+            Tüm hakları saklıdır. İzinsiz kopyalanamaz, dağıtılamaz veya değiştirilemez.
+        </div>
+    </div>
+
+</div>
+{% endblock %}

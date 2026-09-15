@@ -1,0 +1,1101 @@
+{% extends "base.html" %}
+
+{% block title %}Gelen Faturalar{% endblock %}
+
+{% block extra_css %}
+<style>
+    .durum-tabs {
+        display: flex;
+        gap: 8px;
+        margin-bottom: 20px;
+        flex-wrap: wrap;
+    }
+
+    .durum-tab {
+        display: inline-flex;
+        align-items: center;
+        gap: 8px;
+        padding: 8px 16px;
+        border-radius: 8px;
+        text-decoration: none;
+        font-size: 13px;
+        font-weight: 600;
+        border: 1px solid var(--border);
+        color: var(--text2);
+        transition: all 0.15s;
+    }
+
+    .durum-tab:hover { background: var(--surface2); color: var(--text); }
+
+    .durum-tab.active-tum { background: rgba(124,143,245,0.12); color: var(--accent2); border-color: rgba(124,143,245,0.3); }
+    .durum-tab.active-bekliyor { background: rgba(245,166,35,0.12); color: var(--orange); border-color: rgba(245,166,35,0.3); }
+    .durum-tab.active-onaylandi { background: rgba(52,199,123,0.12); color: var(--green); border-color: rgba(52,199,123,0.3); }
+    .durum-tab.active-reddedildi { background: rgba(240,79,89,0.12); color: var(--red); border-color: rgba(240,79,89,0.3); }
+    .durum-tab.active-eksik_bilgi { background: rgba(124,143,245,0.12); color: var(--accent2); border-color: rgba(124,143,245,0.3); }
+
+    /* ─── ALBÜM GRID ─── */
+    .album-grid {
+        display: grid;
+        grid-template-columns: repeat(auto-fill, minmax(200px, 1fr));
+        gap: 16px;
+    }
+
+    .fatura-kart {
+        background: var(--surface);
+        border: 1px solid var(--border);
+        border-radius: 12px;
+        overflow: hidden;
+        cursor: pointer;
+        transition: all 0.2s;
+        position: relative;
+    }
+
+    .fatura-kart:hover {
+        border-color: var(--accent);
+        transform: translateY(-2px);
+        box-shadow: 0 8px 24px rgba(0,0,0,0.3);
+    }
+
+    .fatura-thumb {
+        height: 160px;
+        background: #111;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        position: relative;
+        overflow: hidden;
+    }
+
+    .fatura-thumb iframe {
+        width: 100%;
+        height: 500px;
+        border: none;
+        transform: scale(0.38);
+        transform-origin: top center;
+        pointer-events: none;
+        margin-top: -170px;
+    }
+
+    .fatura-thumb .pdf-icon {
+        font-size: 48px;
+        opacity: 0.3;
+    }
+
+    .fatura-kart-body {
+        padding: 12px;
+        border-top: 1px solid var(--border);
+    }
+
+    .fatura-dosya-adi {
+        font-size: 12px;
+        font-weight: 600;
+        color: var(--text);
+        white-space: nowrap;
+        overflow: hidden;
+        text-overflow: ellipsis;
+        margin-bottom: 6px;
+    }
+
+    .fatura-meta {
+        font-size: 11px;
+        color: var(--text2);
+        display: flex;
+        justify-content: space-between;
+        align-items: center;
+    }
+
+    .fatura-kaynak {
+        background: var(--surface2);
+        padding: 2px 6px;
+        border-radius: 4px;
+        font-size: 10px;
+    }
+
+    .fatura-onay-badge {
+        position: absolute;
+        top: 8px;
+        right: 8px;
+        width: 28px;
+        height: 28px;
+        border-radius: 50%;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        font-size: 14px;
+    }
+
+    .fatura-onay-badge.onaylandi { background: rgba(52,199,123,0.9); }
+    .fatura-onay-badge.reddedildi { background: rgba(240,79,89,0.9); }
+    .fatura-onay-badge.eksik_bilgi { background: rgba(124,143,245,0.9); }
+
+    /* ─── UPLOAD ALANI ─── */
+    .upload-zone {
+        border: 2px dashed var(--border);
+        border-radius: 12px;
+        padding: 32px;
+        text-align: center;
+        cursor: pointer;
+        transition: all 0.2s;
+        margin-bottom: 20px;
+        background: var(--surface);
+    }
+
+    .upload-zone:hover, .upload-zone.drag-over {
+        border-color: var(--accent);
+        background: rgba(79,110,247,0.05);
+    }
+
+    .upload-zone .icon { font-size: 36px; margin-bottom: 8px; }
+    .upload-zone .text { font-size: 14px; color: var(--text2); }
+    .upload-zone .text strong { color: var(--accent2); }
+
+    .upload-progress {
+        display: none;
+        margin-top: 10px;
+        height: 4px;
+        background: var(--surface2);
+        border-radius: 2px;
+        overflow: hidden;
+    }
+
+    .upload-progress-bar {
+        height: 100%;
+        background: var(--accent);
+        transition: width 0.3s;
+        width: 0%;
+    }
+
+    /* ─── TOOLBAR ─── */
+    .toolbar {
+        display: flex;
+        align-items: center;
+        gap: 12px;
+        margin-bottom: 20px;
+        flex-wrap: wrap;
+    }
+
+    .network-input {
+        display: flex;
+        gap: 8px;
+        align-items: center;
+        flex: 1;
+        min-width: 280px;
+    }
+
+    /* ─── SEARCHABLE SELECT ─── */
+    .ss-wrap { position: relative; }
+    .ss-input {
+        background: var(--surface2);
+        border: 1px solid var(--border);
+        border-radius: 8px;
+        color: var(--text);
+        padding: 6px 10px;
+        font-size: 12px;
+        font-family: var(--font);
+        outline: none;
+        width: 100%;
+        transition: border-color .15s;
+    }
+    .ss-input:focus { border-color: var(--accent); }
+    .ss-dropdown {
+        display: none;
+        position: absolute;
+        top: 100%;
+        left: 0; right: 0;
+        background: var(--surface);
+        border: 1px solid var(--accent);
+        border-radius: 8px;
+        z-index: 999;
+        max-height: 220px;
+        overflow-y: auto;
+        margin-top: 2px;
+        box-shadow: 0 8px 24px rgba(0,0,0,0.4);
+    }
+    .ss-dropdown.open { display: block; }
+    .ss-item {
+        padding: 8px 12px;
+        font-size: 12px;
+        cursor: pointer;
+        color: var(--text);
+        transition: background .1s;
+        border-bottom: 1px solid rgba(46,50,73,0.4);
+    }
+    .ss-item:last-child { border-bottom: none; }
+    .ss-item:hover, .ss-item.selected { background: rgba(79,110,247,0.15); color: var(--accent2); }
+    .ss-item .ss-kod { font-weight: 700; margin-right: 6px; }
+    .ss-item .ss-ad { color: var(--text2); font-size: 11px; }
+    .ss-bos { padding: 12px; text-align: center; color: var(--text2); font-size: 12px; }
+
+    /* ─── AY SEÇİCİ ─── */
+    .ay-secici {
+        display: flex;
+        align-items: center;
+        gap: 8px;
+        margin-bottom: 16px;
+        background: var(--surface);
+        border: 1px solid var(--border);
+        border-radius: 10px;
+        padding: 10px 16px;
+    }
+    .ay-secici label { font-size: 12px; color: var(--text2); font-weight: 600; }
+    .ay-secici select { background: var(--surface2); border: 1px solid var(--border); border-radius: 6px; color: var(--text); padding: 5px 10px; font-size: 13px; font-family: var(--font); outline: none; cursor: pointer; }
+    .ay-secici select:focus { border-color: var(--accent); }
+
+    .bos-durum {
+        text-align: center;
+        padding: 60px 20px;
+        color: var(--text2);
+    }
+
+    .bos-durum .ikon { font-size: 48px; margin-bottom: 12px; }
+    .bos-durum .mesaj { font-size: 15px; }
+
+    /* ─── ONAY FORMU ─── */
+    #onayModal .modal-form {
+        gap: 8px;
+        padding: 14px;
+    }
+
+    #onayModal .modal-form > .divider {
+        margin: 1px 0;
+    }
+
+    #onayModal .form-group {
+        gap: 3px;
+    }
+
+    #onayModal #faturaBilgiOzeti {
+        padding: 7px 9px !important;
+        margin-bottom: 4px !important;
+    }
+
+    #onayModal .proje-satiri {
+        padding: 5px !important;
+        gap: 3px !important;
+    }
+
+    #onayModal .ss-input {
+        padding: 4px 8px;
+        min-height: 0;
+    }
+
+    #onayModal textarea.form-control {
+        min-height: 38px !important;
+        padding: 6px 8px;
+    }
+
+    .onay-bolum-baslik {
+        font-size: 11px;
+        text-transform: uppercase;
+        letter-spacing: 0.8px;
+        color: var(--text2);
+        font-weight: 700;
+        margin-bottom: 6px;
+        padding-bottom: 4px;
+        border-bottom: 1px solid var(--border);
+    }
+
+    .nav-secenekler {
+        display: grid;
+        grid-template-columns: 1fr 1fr;
+        gap: 8px;
+        margin-bottom: 4px;
+    }
+
+    .nav-btn {
+        padding: 8px;
+        border-radius: 8px;
+        border: 1px solid var(--border);
+        background: var(--surface2);
+        color: var(--text2);
+        cursor: pointer;
+        font-size: 12px;
+        font-family: var(--font);
+        text-align: center;
+        transition: all 0.15s;
+        font-weight: 600;
+    }
+
+    .nav-btn:hover { border-color: var(--accent); color: var(--accent2); }
+    .nav-btn.prev-btn { grid-column: 1; }
+    .nav-btn.next-btn { grid-column: 2; }
+
+    .fatura-sayac {
+        text-align: center;
+        font-size: 12px;
+        color: var(--text2);
+        margin-bottom: 12px;
+    }
+</style>
+{% endblock %}
+
+{% block topbar %}
+<div class="topbar">
+    <span class="topbar-title">📥 Gelen Faturalar</span>
+    <div class="topbar-actions" style="display:flex;align-items:center;gap:10px">
+        <div style="display:flex;align-items:center;gap:6px">
+            <select id="filtrYil" class="form-control" style="padding:5px 8px;font-size:12px;width:90px" onchange="filtreleVeSirala()">
+            </select>
+            <select id="filtrAy" class="form-control" style="padding:5px 8px;font-size:12px;width:115px" onchange="filtreleVeSirala()">
+                <option value="">Tüm Aylar</option>
+                <option value="eksik">Tarihi Eksik</option>
+                <option value="01">Ocak</option><option value="02">Şubat</option>
+                <option value="03">Mart</option><option value="04">Nisan</option>
+                <option value="05">Mayıs</option><option value="06">Haziran</option>
+                <option value="07">Temmuz</option><option value="08">Ağustos</option>
+                <option value="09">Eylül</option><option value="10">Ekim</option>
+                <option value="11">Kasım</option><option value="12">Aralık</option>
+            </select>
+            <select id="filtrAtama" class="form-control" style="padding:5px 8px;font-size:12px;width:120px" onchange="filtreleVeSirala()">
+                <option value="">Tüm Atamalar</option>
+                <option value="atanan">Atananlar</option>
+                <option value="atanmayan">Atanmayanlar</option>
+            </select>
+            <select id="filtrSirala" class="form-control" style="padding:5px 8px;font-size:12px;width:155px" onchange="filtreleVeSirala()">
+                <option value="yeni">En Yeni Yüklenen</option>
+                <option value="eski">En Eski Yüklenen</option>
+                <option value="firma">Firma A–Z</option>
+                <option value="tutar_desc">Tutar: Yüksek–Düşük</option>
+                <option value="tutar_asc">Tutar: Düşük–Yüksek</option>
+            </select>
+        </div>
+        <button class="btn btn-ghost btn-sm" onclick="toggleUploadPanel()">+ PDF Yükle</button>
+    </div>
+</div>
+{% endblock %}
+
+{% block content %}
+
+<!-- DURUM TABLARı -->
+<div class="durum-tabs">
+    <a href="/gelen?durum=tum" class="durum-tab {% if aktif_durum == 'tum' %}active-tum{% endif %}">
+        📚 Tüm Faturalar <span>{{ durum_sayilari.tum }}</span>
+    </a>
+    <a href="/gelen?durum=bekliyor" class="durum-tab {% if aktif_durum == 'bekliyor' and filtre != 'bana' %}active-bekliyor{% endif %}">
+        ⏳ Bekliyor <span>{{ durum_sayilari.bekliyor }}</span>
+    </a>
+    <a href="/gelen?durum=onaylandi" class="durum-tab {% if aktif_durum == 'onaylandi' %}active-onaylandi{% endif %}">
+        ✅ Onaylandı <span>{{ durum_sayilari.onaylandi }}</span>
+    </a>
+    <a href="/gelen?durum=eksik_bilgi" class="durum-tab {% if aktif_durum == 'eksik_bilgi' %}active-eksik_bilgi{% endif %}">
+        ℹ️ Eksik Bilgi <span>{{ durum_sayilari.eksik_bilgi }}</span>
+    </a>
+    <a href="/gelen?durum=reddedildi" class="durum-tab {% if aktif_durum == 'reddedildi' %}active-reddedildi{% endif %}">
+        ❌ Reddedildi <span>{{ durum_sayilari.reddedildi }}</span>
+    </a>
+    {% if bana_count > 0 or filtre == 'bana' %}
+    <a href="/gelen?durum=bekliyor&filtre=bana" class="durum-tab {% if filtre == 'bana' %}active-bekliyor{% endif %}"
+       style="margin-left:auto;border-color:rgba(245,166,35,0.4);{% if filtre == 'bana' %}background:rgba(245,166,35,0.15);color:var(--orange);{% endif %}">
+        👤 Bana Aktarılanlar <span style="background:var(--orange)">{{ bana_count }}</span>
+    </a>
+    {% endif %}
+</div>
+
+<!-- UPLOAD PANELİ -->
+<div id="uploadPanel" style="display:none; margin-bottom:20px;">
+    <div class="card">
+        <div class="onay-bolum-baslik">PDF Yükle</div>
+
+        <div class="upload-zone" id="uploadZone">
+            <div class="icon">📎</div>
+            <div class="text">PDF dosyalarını buraya sürükle veya <strong>tıkla</strong></div>
+            <input type="file" id="fileInput" multiple accept=".pdf" style="display:none">
+            <div class="upload-progress" id="uploadProgress">
+                <div class="upload-progress-bar" id="uploadBar"></div>
+            </div>
+        </div>
+
+        <div class="divider" style="margin:12px 0"></div>
+
+        <div style="display:flex;align-items:center;gap:10px;flex-wrap:wrap">
+            <button class="btn btn-ghost" type="button" onclick="faturaBilgileriniYenidenOku()">📅 Tarihleri PDF'den Yeniden Oku</button>
+            <span style="font-size:12px;color:var(--text2)">Tarihi veya tutarı eksik faturaları tamamlar.</span>
+        </div>
+
+        <div class="divider" style="margin:12px 0"></div>
+
+        <div class="onay-bolum-baslik">Excel'den Tutar ve İlgili Kişi Al</div>
+        <div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap">
+            <input type="file" id="excelInput" accept=".xls,.xlsx" style="display:none">
+            <button class="btn btn-ghost" type="button" onclick="document.getElementById('excelInput').click()">📊 Excel Seç</button>
+            <span id="excelDosyaAdi" style="font-size:12px;color:var(--text2)">Fatura No ile eşleştirilir</span>
+        </div>
+
+        <div class="divider" style="margin:12px 0"></div>
+
+        <div class="onay-bolum-baslik">Network Klasör Tara</div>
+        <div class="network-input">
+            <input type="text" class="form-control" id="networkKlasor"
+                placeholder="\\\\server\\Faturalar\\2026" style="flex:1">
+            <button class="btn btn-ghost" onclick="networkTara()">🔍 Tara</button>
+        </div>
+    </div>
+</div>
+
+<!-- FATURA ALBÜMÜ -->
+{% if faturalar %}
+<div class="album-grid" id="albumGrid">
+    {% for f in faturalar %}
+    <div class="fatura-kart" onclick="faturaAc({{ f.id }})"
+         data-id="{{ f.id }}"
+         data-dosya="{{ f.dosya_adi }}"
+         data-firma="{{ f.firma_adi or 'Firma belirtilmedi' }}"
+         data-fatura-no="{{ f.fatura_no or '' }}"
+         data-durum="{{ f.durum }}"
+         data-atanan="{{ '1' if f.atanan_id else '0' }}"
+         data-tutar="{{ f.tutar if f.tutar is not none else '' }}"
+         data-yuklenme="{{ f.yuklenme_tarihi.isoformat() }}"
+         data-index="{{ loop.index0 }}"
+         data-tarih="{{ f.fatura_tarihi or '' }}">
+
+        <div class="fatura-thumb">
+            <!-- Küçük PDF önizleme - sadece ilk 5 faturaYükle -->
+            {% if loop.index <= 8 %}
+            <iframe src="{{ url_for('fatura_goruntule', fatura_id=f.id) }}?kart=1"
+                    loading="lazy"
+                    title="{{ f.dosya_adi }}"></iframe>
+            {% else %}
+            <div class="pdf-icon">📄</div>
+            {% endif %}
+        </div>
+
+        {% if f.durum != 'bekliyor' %}
+        <div class="fatura-onay-badge {{ f.durum }}">
+            {% if f.durum == 'onaylandi' %}✓
+            {% elif f.durum == 'reddedildi' %}✗
+            {% else %}!{% endif %}
+        </div>
+        {% endif %}
+
+        <div class="fatura-kart-body">
+            <div class="fatura-dosya-adi" title="{{ f.firma_adi or 'Firma belirtilmedi' }}{% if f.fatura_no %} — {{ f.fatura_no }}{% endif %}">
+                <strong>{{ f.firma_adi or 'Firma belirtilmedi' }}</strong>
+                {% if f.fatura_no %}<span style="display:block;color:var(--text2);font-size:12px;margin-top:3px">{{ f.fatura_no }}</span>{% endif %}
+            </div>
+            <div class="fatura-meta">
+                <span>{{ f.fatura_tarihi or 'Tarih yok' }}</span>
+                <span class="fatura-kaynak">{{ f.kaynak }}</span>
+            </div>
+        </div>
+    </div>
+    {% endfor %}
+</div>
+{% else %}
+<div class="bos-durum">
+    <div class="ikon">📂</div>
+    <div class="mesaj">Bu durumda fatura bulunmuyor</div>
+</div>
+{% endif %}
+
+<!-- ─── ONAY MODAL ─── -->
+<div class="modal-overlay" id="onayModal">
+    <div class="modal" style="max-width:1100px;">
+        <div class="modal-header">
+            <h3 id="modalBaslik">Fatura İncele ve Onayla</h3>
+            <div style="display:flex;gap:8px;align-items:center">
+                <span id="modalSayac" class="fatura-sayac" style="font-size:13px;color:var(--text2)"></span>
+                <button class="btn btn-ghost btn-sm" onclick="oncekiFatura()">← Önceki</button>
+                <button class="btn btn-ghost btn-sm" onclick="sonrakiFatura()">Sonraki →</button>
+                <button class="btn btn-ghost btn-sm" onclick="kapat()">✕</button>
+            </div>
+        </div>
+        <div class="modal-body">
+            <div class="modal-pdf" style="position:relative">
+                <iframe id="pdfFrame" src="" title="Fatura PDF"></iframe>
+                <div id="pdfAcButon" style="position:absolute;top:50%;left:50%;transform:translate(-50%,-50%);display:none;text-align:center;background:var(--surface);padding:18px;border-radius:10px;border:1px solid var(--border)">
+                    <div id="pdfHataMesaji" style="color:var(--text2);margin-bottom:12px">PDF görüntülenemedi.</div>
+                    <a id="pdfLink" href="#" target="_blank" class="btn btn-primary" style="font-size:15px;padding:14px 28px">
+                        📄 Faturayı Görüntüle
+                    </a>
+                </div>
+            </div>
+            <div class="modal-form">
+                <!-- Fatura özeti; alanlar yalnızca düzenleme gerektiğinde açılır -->
+                <div id="faturaBilgiOzeti" style="background:var(--surface2);border:1px solid var(--border);border-radius:10px;padding:10px 12px;margin-bottom:10px">
+                    <div style="display:flex;justify-content:space-between;align-items:flex-start;gap:12px">
+                        <div style="min-width:0;flex:1">
+                            <div style="display:flex;justify-content:space-between;gap:12px;align-items:center">
+                                <strong id="ozetFaturaNo" style="font-size:14px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">—</strong>
+                                <span id="ozetTarih" style="font-size:12px;color:var(--text2);white-space:nowrap">—</span>
+                            </div>
+                            <div style="display:flex;justify-content:space-between;gap:12px;align-items:center;margin-top:5px">
+                                <span id="ozetFirma" style="font-size:12px;color:var(--text2);white-space:nowrap;overflow:hidden;text-overflow:ellipsis">—</span>
+                                <strong id="ozetTutar" style="font-size:12px;white-space:nowrap">—</strong>
+                            </div>
+                        </div>
+                        <button type="button" class="btn btn-ghost btn-sm" id="faturaBilgiDuzenleBtn" onclick="faturaBilgiDuzenle()" style="padding:5px 9px;flex:none">Düzenle</button>
+                    </div>
+                </div>
+                <div id="faturaBilgiForm" style="display:none">
+                <div style="display:grid;grid-template-columns:1fr 1fr;gap:6px;margin-bottom:6px">
+                    <div class="form-group">
+                        <label class="form-label">Fatura No</label>
+                        <input type="text" class="form-control" id="fFaturaNo" placeholder="FAT-2026-001">
+                    </div>
+                    <div class="form-group">
+                        <label class="form-label">Tarih</label>
+                        <input type="text" class="form-control" id="fTarih" placeholder="01.01.2026">
+                    </div>
+                </div>
+                <div style="display:grid;grid-template-columns:2fr 1fr;gap:6px">
+                    <div class="form-group">
+                        <label class="form-label">Firma</label>
+                        <input type="text" class="form-control" id="fFirma" placeholder="Firma adı">
+                    </div>
+                    <div class="form-group">
+                        <label class="form-label">Tutar</label>
+                        <input type="number" class="form-control" id="fTutar" placeholder="0,00">
+                    </div>
+                </div>
+                </div>
+
+                <div class="divider"></div>
+
+                <!-- PROJE KODLARI -->
+                <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:8px">
+                    <span class="onay-bolum-baslik" style="margin:0">Proje Kodları</span>
+                    <div style="display:flex;align-items:center;gap:6px">
+                        <label style="font-size:11px;color:var(--text2)">Proje sayısı:</label>
+                        <select class="form-control" id="projeSayisi" style="padding:3px 6px;font-size:12px;width:50px" onchange="projeSatirlariniGuncelle()">
+                            <option value="1">1</option>
+                            <option value="2">2</option>
+                            <option value="3">3</option>
+                            <option value="4">4</option>
+                            <option value="5">5</option>
+                        </select>
+                    </div>
+                </div>
+                <div id="projeSatirlari" style="display:flex;flex-direction:column;gap:6px"></div>
+
+                <div class="divider"></div>
+
+                <!-- NOT & ÖDEME NOTU -->
+                <div style="display:grid;grid-template-columns:1fr 1fr;gap:6px">
+                    <div class="form-group">
+                        <label class="form-label">Not</label>
+                        <textarea class="form-control" id="notAlani" placeholder="Açıklama..." style="min-height:38px;font-size:12px"></textarea>
+                    </div>
+                    <div class="form-group">
+                        <label class="form-label">Ödeme Notu</label>
+                        <textarea class="form-control" id="odemeNotu" placeholder="Ödeme bilgisi..." style="min-height:38px;font-size:12px"></textarea>
+                    </div>
+                </div>
+
+                <div class="divider"></div>
+
+                <!-- EYLEM BUTONLARI -->
+                <div style="display:grid;grid-template-columns:1fr 1fr;gap:6px;margin-top:auto">
+                    <button class="btn btn-green" onclick="onayla('onaylandi')">✓ Onayla</button>
+                    <button class="btn btn-red" onclick="onayla('reddedildi')">✗ Reddet</button>
+                    <button class="btn btn-orange" onclick="onayla('eksik_bilgi')">! Eksik Bilgi</button>
+                    <button class="btn btn-ghost" onclick="aktarPanelAc()" style="font-size:12px">↗ Farklı Kişiye Aktar</button>
+                    <button class="btn btn-red" id="faturaSilBtn" onclick="faturaSil()" style="display:none;grid-column:1/-1;font-size:12px">🗑 Faturayı Sil</button>
+                    <button class="btn btn-ghost" id="faturaDamgaBtn" onclick="faturaDamgala()" style="display:none;grid-column:1/-1;font-size:12px">✓ Onay Damgasını Yenile</button>
+                </div>
+
+                <!-- ONAYLAYAN - en altta -->
+                <div style="background:var(--surface2);border:1px solid var(--border);border-radius:8px;padding:5px 8px;font-size:12px;display:flex;align-items:center;gap:6px">
+                    <span style="color:var(--text2);font-size:10px;font-weight:700">ONAYLAYAN</span>
+                    <div style="width:22px;height:22px;border-radius:50%;background:var(--accent);display:flex;align-items:center;justify-content:center;font-size:10px;font-weight:700" id="onaylayanAvatar"></div>
+                    <span id="onaylayanAd" style="color:var(--text)"></span>
+                    <span id="onaylayanDept" style="color:var(--text2);font-size:10px;margin-left:auto"></span>
+                </div>
+
+                <!-- AKTAR PANELİ -->
+                <div id="aktarPanel" style="display:none;background:var(--surface2);border:1px solid var(--border);border-radius:8px;padding:12px;margin-top:4px">
+                    <div style="font-size:11px;color:var(--text2);font-weight:600;margin-bottom:8px">AKTAR — Kişi Seç</div>
+                    <select class="form-control" id="aktarKullanici" style="margin-bottom:8px;font-size:13px">
+                        <option value="">Kullanıcı seçin...</option>
+                        {% for k in kullanicilar %}
+                        <option value="{{ k.id }}">{{ k.ad_soyad }} ({{ k.departman.kod if k.departman else '' }})</option>
+                        {% endfor %}
+                    </select>
+                    <div style="display:flex;gap:6px">
+                        <button class="btn btn-primary btn-sm" onclick="aktarGonder()" style="flex:1">Aktar</button>
+                        <button class="btn btn-ghost btn-sm" onclick="aktarPanelKapat()">İptal</button>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+
+{% endblock %}
+
+{% block extra_js %}
+<script>
+let faturalar = {{ faturalar | map(attribute='id') | list | tojson }};
+const dosyaAdlari = {{ faturalar | map(attribute='dosya_adi') | list | tojson }};
+const anaProjeler = {{ ana_projeler | map(attribute='id') | list | tojson }};
+const anaProjelerData = [{% for p in ana_projeler %}{"id":{{ p.id }},"kod":"{{ p.kod }}","ad":"{{ p.ad }}"}{% if not loop.last %},{% endif %}{% endfor %}];
+let aktifIndex = 0;
+let aktifFaturaId = null;
+let aktifPdfObjectUrl = null;
+
+// Oturum bilgisi
+let oturumBilgi = {};
+fetch('/api/oturum-bilgisi').then(r=>r.json()).then(d=>{
+    oturumBilgi=d;
+    guncelleOnaylayanGosterim();
+    const silBtn = document.getElementById('faturaSilBtn');
+    if(silBtn && d.fatura_silebilir) silBtn.style.display = 'block';
+});
+
+function guncelleOnaylayanGosterim() {
+    const av = document.getElementById('onaylayanAvatar');
+    const ad = document.getElementById('onaylayanAd');
+    const dp = document.getElementById('onaylayanDept');
+    if(av) av.textContent = oturumBilgi.kisaltma||'?';
+    if(ad) ad.textContent = oturumBilgi.ad_soyad||'';
+    if(dp) dp.textContent = oturumBilgi.departman_kod||'';
+}
+
+async function faturaSil() {
+    if(!aktifFaturaId) return;
+    if(!confirm('Bu faturayı kalıcı olarak silmek istediğinize emin misiniz?')) return;
+    const res = await fetch(`/api/fatura/${aktifFaturaId}`, {method:'DELETE'});
+    const data = await res.json();
+    if(data.basarili) {
+        toast('Fatura silindi', 'success');
+        setTimeout(()=>location.reload(), 700);
+    } else {
+        toast(data.hata || 'Fatura silinemedi', 'error');
+    }
+}
+
+async function faturaDamgala() {
+    if(!aktifFaturaId) return;
+    const res = await fetch(`/api/fatura/${aktifFaturaId}/damgala`, {method:'POST'});
+    const data = await res.json();
+    if(data.basarili) {
+        toast('Onay damgası PDF dosyasına eklendi', 'success');
+        document.getElementById('pdfFrame').src = `/fatura/${aktifFaturaId}/goruntule?t=${Date.now()}`;
+    } else {
+        toast(data.hata || 'Onay damgası eklenemedi', 'error');
+    }
+}
+
+// ─── UPLOAD ───
+function toggleUploadPanel() {
+    const p = document.getElementById('uploadPanel');
+    p.style.display = p.style.display==='none' ? 'block' : 'none';
+}
+const zone = document.getElementById('uploadZone');
+const fileInput = document.getElementById('fileInput');
+zone.addEventListener('click', ()=>fileInput.click());
+zone.addEventListener('dragover', e=>{e.preventDefault();zone.classList.add('drag-over');});
+zone.addEventListener('dragleave', ()=>zone.classList.remove('drag-over'));
+zone.addEventListener('drop', e=>{e.preventDefault();zone.classList.remove('drag-over');yukle(e.dataTransfer.files);});
+fileInput.addEventListener('change', ()=>yukle(fileInput.files));
+document.getElementById('excelInput').addEventListener('change', excelBilgileriniYukle);
+
+async function yukle(dosyalar) {
+    const form = new FormData();
+    for(const d of dosyalar) form.append('dosyalar',d);
+    document.getElementById('uploadProgress').style.display='block';
+    document.getElementById('uploadBar').style.width='60%';
+    const res = await fetch('/api/upload',{method:'POST',body:form});
+    const data = await res.json();
+    document.getElementById('uploadBar').style.width='100%';
+    setTimeout(()=>{document.getElementById('uploadProgress').style.display='none';document.getElementById('uploadBar').style.width='0';},800);
+    if(data.basarili){toast(`${data.yuklenen} fatura yüklendi`,'success');setTimeout(()=>location.reload(),1200);}
+    else toast(data.hata||'Hata','error');
+}
+
+async function excelBilgileriniYukle() {
+    const input = document.getElementById('excelInput');
+    const dosya = input.files[0];
+    if(!dosya) return;
+    document.getElementById('excelDosyaAdi').textContent = `${dosya.name} işleniyor...`;
+    const form = new FormData();
+    form.append('dosya', dosya);
+    try {
+        const res = await fetch('/api/excel-fatura-bilgileri', {method:'POST', body:form});
+        const data = await res.json();
+        if(!res.ok || !data.basarili) throw new Error(data.hata || 'Excel yüklenemedi');
+        document.getElementById('excelDosyaAdi').textContent = dosya.name;
+        toast(`${data.tutar_guncellenen} tutar güncellendi, ${data.atanan} fatura kullanıcıya atandı, ${data.eslesmeyen} eşleşmedi`, 'success');
+        setTimeout(()=>location.reload(), 1800);
+    } catch(e) {
+        document.getElementById('excelDosyaAdi').textContent = 'Excel yüklenemedi';
+        toast(e.message, 'error');
+    } finally {
+        input.value = '';
+    }
+}
+
+async function networkTara() {
+    const klasor = document.getElementById('networkKlasor').value;
+    if(!klasor){toast('Klasör yolu girin','error');return;}
+    const data = await apiFetch('/api/network-tara','POST',{klasor});
+    if(data.basarili){toast(`${data.eklenen} yeni fatura bulundu`,'success');if(data.eklenen>0)setTimeout(()=>location.reload(),1200);}
+    else toast(data.hata||'Klasöre erişilemedi','error');
+}
+
+// ─── PROJE SATIRLARI ───
+function projeSatiriHTML(index) {
+    return `
+    <div class="proje-satiri" id="projeSatir${index}" style="background:var(--surface2);border:1px solid var(--border);border-radius:6px;padding:8px;display:flex;flex-direction:column;gap:5px">
+        <div style="font-size:10px;color:var(--text2);font-weight:700">PROJE ${index}</div>
+        <div class="ss-wrap" id="anaWrap${index}">
+            <input type="text" class="ss-input" id="anaInput${index}" placeholder="Ana proje ara..."
+                   autocomplete="off"
+                   oninput="ssFiltrele('ana',${index})"
+                   onfocus="ssAc('ana',${index})"
+                   onblur="setTimeout(()=>ssKapat('ana',${index}),200)">
+            <input type="hidden" id="anaPrj${index}" value="">
+            <div class="ss-dropdown" id="anaDrop${index}"></div>
+        </div>
+        <div class="ss-wrap" id="altWrap${index}">
+            <input type="text" class="ss-input" id="altInput${index}" placeholder="Alt proje ara..."
+                   autocomplete="off"
+                   oninput="ssFiltrele('alt',${index})"
+                   onfocus="ssAc('alt',${index})"
+                   onblur="setTimeout(()=>ssKapat('alt',${index}),200)"
+                   disabled>
+            <input type="hidden" id="altPrj${index}" value="">
+            <div class="ss-dropdown" id="altDrop${index}"></div>
+        </div>
+    </div>`;
+}
+
+// ─── SEARCHABLE SELECT ───
+const altProjeCaches = {}; // ana_id -> alt proje listesi
+
+function ssOgeHTML(id, kod, ad, tip, index) {
+    return `<div class="ss-item" onmousedown="ssSecim('${tip}',${index},${id},'${kod}','${kod} — ${ad}')">
+        <span class="ss-kod">${kod}</span><span class="ss-ad">${ad}</span>
+    </div>`;
+}
+
+function ssAc(tip, index) {
+    const drop = document.getElementById(`${tip==='ana'?'ana':'alt'}Drop${index}`);
+    ssFiltrele(tip, index);
+    drop.classList.add('open');
+}
+
+function ssKapat(tip, index) {
+    const drop = document.getElementById(`${tip==='ana'?'ana':'alt'}Drop${index}`);
+    drop.classList.remove('open');
+}
+
+function ssFiltrele(tip, index) {
+    const input = document.getElementById(`${tip==='ana'?'ana':'alt'}Input${index}`);
+    const drop = document.getElementById(`${tip==='ana'?'ana':'alt'}Drop${index}`);
+    const q = input.value.toLowerCase().replace(/i/g,'[iı]').replace(/ı/g,'[iı]')
+                         .replace(/ğ/g,'[ğg]').replace(/ü/g,'[üu]')
+                         .replace(/ş/g,'[şs]').replace(/ö/g,'[öo]')
+                         .replace(/ç/g,'[çc]');
+    let items = [];
+    if(tip === 'ana') {
+        items = anaProjelerData.filter(p =>
+            p.kod.toLowerCase().includes(input.value.toLowerCase()) ||
+            p.ad.toLowerCase().includes(input.value.toLowerCase())
+        );
+        drop.innerHTML = items.length
+            ? items.map(p=>ssOgeHTML(p.id,p.kod,p.ad,'ana',index)).join('')
+            : '<div class="ss-bos">Sonuç bulunamadı</div>';
+    } else {
+        const anaId = document.getElementById(`anaPrj${index}`).value;
+        if(!anaId){drop.innerHTML='<div class="ss-bos">Önce ana proje seçin</div>';return;}
+        const liste = altProjeCaches[anaId]||[];
+        items = liste.filter(a =>
+            a.kod.toLowerCase().includes(input.value.toLowerCase()) ||
+            a.ad.toLowerCase().includes(input.value.toLowerCase())
+        );
+        drop.innerHTML = items.length
+            ? items.map(a=>ssOgeHTML(a.id,a.kod,a.ad,'alt',index)).join('')
+            : '<div class="ss-bos">Sonuç bulunamadı</div>';
+    }
+    drop.classList.add('open');
+}
+
+async function ssSecim(tip, index, id, kod, label) {
+    if(tip === 'ana') {
+        document.getElementById(`anaInput${index}`).value = label;
+        document.getElementById(`anaPrj${index}`).value = id;
+        ssKapat('ana', index);
+        // Alt projeleri yükle ve cache'e al
+        const altInput = document.getElementById(`altInput${index}`);
+        altInput.value = ''; altInput.disabled = true;
+        document.getElementById(`altPrj${index}`).value = '';
+        if(!altProjeCaches[id]) {
+            const data = await apiFetch(`/api/alt-projeler/${id}`);
+            altProjeCaches[id] = data;
+        }
+        altInput.disabled = false;
+        altInput.placeholder = `Alt proje ara... (${altProjeCaches[id].length} seçenek)`;
+    } else {
+        document.getElementById(`altInput${index}`).value = label;
+        document.getElementById(`altPrj${index}`).value = id;
+        ssKapat('alt', index);
+    }
+}
+
+function ssSifirla(index) {
+    ['ana','alt'].forEach(tip => {
+        const inputId = `${tip}Input${index}`;
+        const hiddenId = `${tip}Prj${index}`;
+        if(document.getElementById(inputId)) document.getElementById(inputId).value='';
+        if(document.getElementById(hiddenId)) document.getElementById(hiddenId).value='';
+    });
+    const altInp = document.getElementById(`altInput${index}`);
+    if(altInp) { altInp.disabled=true; altInp.placeholder='Alt proje ara...'; }
+}
+
+function projeSatirlariniGuncelle() {
+    const sayi = parseInt(document.getElementById('projeSayisi').value) || 1;
+    const kap = document.getElementById('projeSatirlari');
+    kap.innerHTML = '';
+    for(let i=1; i<=sayi; i++) kap.innerHTML += projeSatiriHTML(i);
+}
+
+async function altPrjYukle(index) {
+    const anaId = document.getElementById(`anaPrj${index}`).value;
+    const sel = document.getElementById(`altPrj${index}`);
+    sel.innerHTML = '<option value="">Yükleniyor...</option>';
+    if(!anaId){sel.innerHTML='<option value="">Alt proje seçin...</option>';return;}
+    const data = await apiFetch(`/api/alt-projeler/${anaId}`);
+    sel.innerHTML = '<option value="">Seçiniz...</option>'+
+        data.map(a=>`<option value="${a.id}">${a.kod} — ${a.ad}</option>`).join('');
+}
+
+// ─── MODAL ───
+async function faturaAc(id) {
+    aktifFaturaId=id; aktifIndex=faturalar.indexOf(id);
+    // Dosya yolu yerine fatura kimliği kullanılır; özel Supabase bucket'ları da çalışır.
+    const pdfSrc = `/fatura/${id}/goruntule`;
+    const frameEl = document.getElementById('pdfFrame');
+    const linkEl = document.getElementById('pdfLink');
+    const butonEl = document.getElementById('pdfAcButon');
+    const hataEl = document.getElementById('pdfHataMesaji');
+    if(linkEl) linkEl.href = pdfSrc;
+    if(butonEl) butonEl.style.display = 'none';
+    frameEl.src = 'about:blank';
+    frameEl.style.opacity = '0';
+    const kart = document.querySelector(`.fatura-kart[data-id="${id}"]`);
+    const firmaAdi = kart?.dataset.firma || 'Firma belirtilmedi';
+    const faturaNo = kart?.dataset.faturaNo || '';
+    const damgaBtn = document.getElementById('faturaDamgaBtn');
+    if(damgaBtn) damgaBtn.style.display =
+        kart?.dataset.durum === 'onaylandi' ? 'block' : 'none';
+    document.getElementById('modalBaslik').textContent =
+        faturaNo ? `${firmaAdi} — ${faturaNo}` : firmaAdi;
+    guncelleSayac(); formuTemizle();
+    faturaBilgiOzetiniGuncelle();
+    document.getElementById('onayModal').classList.add('open');
+    guncelleOnaylayanGosterim();
+    frameEl.src = pdfSrc;
+    frameEl.style.opacity = '1';
+    try {
+        const d = await apiFetch(`/api/fatura/${id}/detay`);
+        if(d.fatura_no) document.getElementById('fFaturaNo').value=d.fatura_no;
+        if(d.firma_adi) document.getElementById('fFirma').value=d.firma_adi;
+        if(d.fatura_tarihi) document.getElementById('fTarih').value=d.fatura_tarihi;
+        if(d.tutar) document.getElementById('fTutar').value=d.tutar;
+        faturaBilgiOzetiniGuncelle();
+        if(d.not_alani) document.getElementById('notAlani').value=d.not_alani;
+        if(d.odeme_notu) document.getElementById('odemeNotu').value=d.odeme_notu;
+        if(d.projeler && d.projeler.length > 0) {
+            document.getElementById('projeSayisi').value = d.projeler.length;
+            projeSatirlariniGuncelle();
+            for(let i=0; i<d.projeler.length; i++) {
+                const p = d.projeler[i];
+                if(p.ana_proje_id && p.ana_kod) {
+                    await ssSecim('ana', i+1, p.ana_proje_id, p.ana_kod, p.ana_kod+(p.ana_ad?' — '+p.ana_ad:''));
+                    if(p.alt_proje_id && p.alt_kod)
+                        await ssSecim('alt', i+1, p.alt_proje_id, p.alt_kod, p.alt_kod+(p.alt_ad?' — '+p.alt_ad:''));
+                }
+            }
+        }
+    } catch(e){}
+}
+
+function faturaBilgiOzetiniGuncelle() {
+    const no = document.getElementById('fFaturaNo')?.value?.trim() || 'Fatura numarası yok';
+    const tarih = document.getElementById('fTarih')?.value?.trim() || 'Tarih yok';
+    const firma = document.getElementById('fFirma')?.value?.trim() || 'Firma belirtilmedi';
+    const tutarDegeri = document.getElementById('fTutar')?.value;
+    const tutar = tutarDegeri && !isNaN(Number(tutarDegeri))
+        ? Number(tutarDegeri).toLocaleString('tr-TR', {minimumFractionDigits:2, maximumFractionDigits:2}) + ' TL'
+        : 'Tutar yok';
+    document.getElementById('ozetFaturaNo').textContent = no;
+    document.getElementById('ozetTarih').textContent = tarih;
+    document.getElementById('ozetFirma').textContent = firma;
+    document.getElementById('ozetTutar').textContent = tutar;
+}
+
+function faturaBilgiDuzenle() {
+    const form = document.getElementById('faturaBilgiForm');
+    const btn = document.getElementById('faturaBilgiDuzenleBtn');
+    const aciliyor = form.style.display === 'none';
+    form.style.display = aciliyor ? 'block' : 'none';
+    btn.textContent = aciliyor ? 'Kapat' : 'Düzenle';
+    if(!aciliyor) faturaBilgiOzetiniGuncelle();
+}
+
+function guncelleSayac() {
+    document.getElementById('modalSayac').textContent=`${aktifIndex+1} / ${faturalar.length}`;
+}
+
+function kapat() {
+    document.getElementById('onayModal').classList.remove('open');
+    document.getElementById('pdfFrame').src='';
+    if(aktifPdfObjectUrl) {
+        URL.revokeObjectURL(aktifPdfObjectUrl);
+        aktifPdfObjectUrl = null;
+    }
+}
+
+function oncekiFatura() {
+    if(aktifIndex>0){aktifIndex--;faturaAc(faturalar[aktifIndex],dosyaAdlari[aktifIndex]);}
+}
+function sonrakiFatura() {
+    if(aktifIndex<faturalar.length-1){aktifIndex++;faturaAc(faturalar[aktifIndex],dosyaAdlari[aktifIndex]);}
+}
+
+document.getElementById('onayModal').addEventListener('click',function(e){if(e.target===this)kapat();});
+document.addEventListener('keydown',e=>{
+    if(!document.getElementById('onayModal').classList.contains('open'))return;
+    if(e.key==='Escape')kapat();
+    if(e.key==='ArrowRight')sonrakiFatura();
+    if(e.key==='ArrowLeft')oncekiFatura();
+});
+
+// ─── ONAYLA ───
+async function onayla(durum) {
+    if(!aktifFaturaId) return;
+    const sayi = parseInt(document.getElementById('projeSayisi').value)||1;
+    const projeler = [];
+    for(let i=1;i<=sayi;i++) {
+        const anaId = document.getElementById(`anaPrj${i}`)?.value;
+        const altId = document.getElementById(`altPrj${i}`)?.value;
+        if(anaId) projeler.push({ana_proje_id: parseInt(anaId)||null, alt_proje_id: parseInt(altId)||null});
+    }
+    await apiFetch(`/api/fatura/${aktifFaturaId}/bilgi`,'POST',{
+        fatura_no: document.getElementById('fFaturaNo').value,
+        firma_adi: document.getElementById('fFirma').value,
+        fatura_tarihi: document.getElementById('fTarih').value,
+        tutar: parseFloat(document.getElementById('fTutar').value)||null,
+    });
+    const res = await apiFetch(`/api/fatura/${aktifFaturaId}/onayla`,'POST',{
+        projeler, durum,
+        fatura_no: document.getElementById('fFaturaNo').value,
+        firma_adi: document.getElementById('fFirma').value,
+        fatura_tarihi: document.getElementById('fTarih').value,
+        tutar: parseFloat(document.getElementById('fTutar').value)||null,
+        not_alani: document.getElementById('notAlani').value,
+        odeme_notu: document.getElementById('odemeNotu').value,
+    });
+    if(res.basarili) {
+        const etiket={onaylandi:'Onaylandı ✓',reddedildi:'Reddedildi ✗',eksik_bilgi:'Eksik Bilgi !'};
+        if(durum === 'onaylandi' && res.damga_uygulandi === false)
+            toast('Fatura onaylandı; ancak PDF damgası eklenemedi. Onaylı faturadan tekrar deneyin.','error');
+        else
+            toast(etiket[durum]||'Kaydedildi','success');
+        const kart=document.querySelector(`[data-id="${aktifFaturaId}"]`);
+        if(kart){kart.style.opacity='0.4';kart.style.pointerEvents='none';}
+        if(aktifIndex<faturalar.length-1) setTimeout(()=>sonrakiFatura(),600);
+        else setTimeout(()=>{kapat();location.reload();},800);
+    }
+}
+
+// ─── AKTAR ───
+function aktarPanelAc() { document.getElementById('aktarPanel').style.display='block'; }
+function aktarPanelKapat() { document.getElementById('aktarPanel').style.display='none'; }
+
+async function aktarGonder() {
+    if(!aktifFaturaId) return;
+    const hedefId = document.getElementById('aktarKullanici').value;
+    if(!hedefId){toast('Kullanıcı seçin','error');return;}
+    const res = await apiFetch(`/api/fatura/${aktifFaturaId}/aktar`,'POST',{hedef_kullanici_id:parseInt(hedefId)});
+    if(res.basarili){
+        toast(`${res.hedef} kişisine aktarıldı`,'success');
+        aktarPanelKapat();
+        const kart=document.querySelector(`[data-id="${aktifFaturaId}"]`);
+        if(kart){kart.style.opacity='0.4';kart.style.pointerEvents='none';}
+        if(aktifIndex<faturalar.length-1) setTimeout(()=>sonrakiFatura(),600);
+        else setTimeout(()=>{kapat();location.reload();},800);
+    }
+}
+
+function formuTemizle() {
+    ['fFaturaNo','fFirma','fTarih','fTutar','notAlani','odemeNotu'].forEach(id=>{
+        const el=document.getElementById(id); if(el) el.value='';
+    });
+    document.getElementById('projeSayisi').value='1';
+    const bilgiForm = document.getElementById('faturaBilgiForm');
+    const bilgiBtn = document.getElementById('faturaBilgiDuzenleBtn');
+    if(bilgiForm) bilgiForm.style.display='none';
+    if(bilgiBtn) bilgiBtn.textContent='Düzenle';
+    projeSatirlariniGuncelle();
+    aktarPanelKapat();
+}
+
+// Ay/yıl filtresi
+function ayFiltrele() {
+    filtreleVeSirala();
+}
+
+function filtreleVeSirala() {
+    const yil = document.getElementById('filtrYil').value;
+    const ay = document.getElementById('filtrAy').value;
+    const atama = document.getElementById('filtrAtama')?.value || '';
+    const sirala = document.getElementById('filtrSirala')?.value || 'yeni';
+    const album = document.getElementById('albumGrid');
+    const kartlar = [...document.querySelectorAll('.fatura-kart')];
+    kartlar.forEach(k => {
+        const tarih = k.dataset.tarih || '';
+        const [gun, mon, yr] = tarih.split('.');
+        const yilEsles = !yil || yr === yil;
+        const ayEsles = !ay || (ay === 'eksik' ? !tarih : mon === ay);
+        const atamaEsles = !atama || (atama === 'atanan' ? k.dataset.atanan === '1' : k.dataset.atanan === '0');
+        k.style.display = (yilEsles && ayEsles && atamaEsles) ? '' : 'none';
+    });
+    kartlar.sort((a,b) => {
+        if(sirala === 'firma') return (a.dataset.firma||'').localeCompare(b.dataset.firma||'', 'tr');
+        if(sirala === 'tutar_desc' || sirala === 'tutar_asc') {
+            const fark = (parseFloat(a.dataset.tutar)||0) - (parseFloat(b.dataset.tutar)||0);
+            return sirala === 'tutar_desc' ? -fark : fark;
+        }
+        const fark = new Date(a.dataset.yuklenme||0) - new Date(b.dataset.yuklenme||0);
+        return sirala === 'eski' ? fark : -fark;
+    });
+    kartlar.forEach(k => album?.appendChild(k));
+    faturalar = kartlar.map(k => Number(k.dataset.id));
+}
+
+// Yıl dropdown'ını doldur
+function yilDropdownDoldur() {
+    const kartlar = document.querySelectorAll('.fatura-kart');
+    const yillar = new Set();
+    kartlar.forEach(k => {
+        const tarih = k.dataset.tarih || '';
+        const parts = tarih.split('.');
+        if(parts[2]) yillar.add(parts[2]);
+    });
+    const sel = document.getElementById('filtrYil');
+    sel.innerHTML = '<option value="">Tüm Yıllar</option>' +
+        [...yillar].sort().reverse().map(y =>
+            `<option value="${y}">${y}</option>`
+        ).join('');
+
+    filtreleVeSirala();
+}
+
+async function faturaBilgileriniYenidenOku() {
+    toast('Eksik fatura tarihleri PDFlerden okunuyor...', 'success');
+    const sonuc = await apiFetch('/api/fatura-bilgileri-yeniden-oku', 'POST', {});
+    if(sonuc.basarili) {
+        toast(`${sonuc.guncellenen} faturanın bilgileri tamamlandı`, 'success');
+        setTimeout(() => location.reload(), 900);
+    } else {
+        toast(sonuc.hata || 'Fatura bilgileri okunamadı', 'error');
+    }
+}
+
+// İlk yükleme
+projeSatirlariniGuncelle();
+yilDropdownDoldur();
+</script>
+{% endblock %}
