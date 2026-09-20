@@ -3,11 +3,7 @@ import os
 import sys
 
 
-def test_xml_lines_are_stored_independently(tmp_path):
-    os.environ['DATABASE_URL'] = f"sqlite:///{tmp_path / 'test.db'}"
-    sys.modules.pop('app', None)
-    module = importlib.import_module('app')
-    module.app.config.update(TESTING=True)
+def test_xml_lines_are_stored_independently(module):
 
     with module.app.app_context():
         invoice = module.Fatura(dosya_adi='test.pdf')

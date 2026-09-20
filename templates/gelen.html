@@ -394,41 +394,18 @@
 <!-- UPLOAD PANELİ -->
 <div id="uploadPanel" style="display:none; margin-bottom:20px;">
     <div class="card">
-        <div class="onay-bolum-baslik">PDF + XML Yükle</div>
+        <div class="onay-bolum-baslik">PDF / XML / HTML Yükle</div>
 
         <div class="upload-zone" id="uploadZone">
             <div class="icon">📎</div>
-            <div class="text">PDF ve UBL-TR XML dosyalarını birlikte buraya sürükle veya <strong>tıkla</strong></div>
-            <input type="file" id="fileInput" multiple accept=".pdf,.xml" style="display:none">
+            <div class="text">PDF, XML ve HTML belgelerini buraya sürükle veya <strong>tıkla</strong></div>
+            <input type="file" id="fileInput" multiple accept=".pdf,.xml,.html,.htm" style="display:none">
             <div class="upload-progress" id="uploadProgress">
                 <div class="upload-progress-bar" id="uploadBar"></div>
             </div>
         </div>
 
-        <div class="divider" style="margin:12px 0"></div>
-
-        <div style="display:flex;align-items:center;gap:10px;flex-wrap:wrap">
-            <button class="btn btn-ghost" type="button" onclick="faturaBilgileriniYenidenOku()">📅 Eksik Bilgileri Yeniden Oku</button>
-            <span style="font-size:12px;color:var(--text2)">XML varsa tüm temel alanları; yoksa PDF tarih ve tutarını tamamlar.</span>
-        </div>
-
-        <div class="divider" style="margin:12px 0"></div>
-
-        <div class="onay-bolum-baslik">Excel'den Tutar ve İlgili Kişi Al</div>
-        <div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap">
-            <input type="file" id="excelInput" accept=".xls,.xlsx" style="display:none">
-            <button class="btn btn-ghost" type="button" onclick="document.getElementById('excelInput').click()">📊 Excel Seç</button>
-            <span id="excelDosyaAdi" style="font-size:12px;color:var(--text2)">Fatura No ile eşleştirilir</span>
-        </div>
-
-        <div class="divider" style="margin:12px 0"></div>
-
-        <div class="onay-bolum-baslik">Network Klasör Tara</div>
-        <div class="network-input">
-            <input type="text" class="form-control" id="networkKlasor"
-                placeholder="\\\\server\\Faturalar\\2026" style="flex:1">
-            <button class="btn btn-ghost" onclick="networkTara()">🔍 Tara</button>
-        </div>
+        <p style="color:var(--text2);font-size:12px;margin-top:12px">Aynı faturanın belgeleri fatura numarası/ETTN veya aynı dosya adıyla eşleştirilir. XML önceliklidir. XML/HTML tek başına da yüklenebilir.</p>
     </div>
 </div>
 
@@ -552,7 +529,7 @@
                 <div class="divider"></div>
 
                 <div id="faturaSatirlariAlani" style="display:none">
-                    <div class="onay-bolum-baslik">XML Fatura Satırları</div>
+                    <div class="onay-bolum-baslik">Fatura Satırları (XML / HTML)</div>
                     <div id="faturaSatirlari" style="max-height:120px;overflow:auto;background:var(--surface2);border:1px solid var(--border);border-radius:8px;padding:8px;font-size:11px"></div>
                     <div class="divider"></div>
                 </div>
@@ -589,6 +566,8 @@
 
                 <div class="divider"></div>
 
+                <div id="onayDurum" role="status" style="padding:8px;color:var(--accent2)"></div>
+                <div id="okumaKontrolu" style="font-size:12px;color:var(--orange)"></div>
                 <!-- EYLEM BUTONLARI -->
                 <div style="display:grid;grid-template-columns:1fr 1fr;gap:6px;margin-top:auto">
                     <button class="btn btn-green" onclick="onayla('onaylandi')">✓ Onayla</button>
@@ -636,6 +615,10 @@ const anaProjelerData = [{% for p in ana_projeler %}{"id":{{ p.id }},"kod":"{{ p
 let aktifIndex = 0;
 let aktifFaturaId = null;
 let aktifPdfObjectUrl = null;
+let islemSuruyor = false;
+let detayYukleniyor = false;
+let aktifDurum = '';
+let aktifParaBirimi = 'TRY';
 
 function escapeHtml(value) {
     return String(value ?? '')
@@ -689,7 +672,7 @@ zone.addEventListener('dragover', e=>{e.preventDefault();zone.classList.add('dra
 zone.addEventListener('dragleave', ()=>zone.classList.remove('drag-over'));
 zone.addEventListener('drop', e=>{e.preventDefault();zone.classList.remove('drag-over');yukle(e.dataTransfer.files);});
 fileInput.addEventListener('change', ()=>yukle(fileInput.files));
-document.getElementById('excelInput').addEventListener('change', excelBilgileriniYukle);
+
 
 async function yukle(dosyalar) {
     const form = new FormData();
@@ -864,6 +847,8 @@ async function altPrjYukle(index) {
 
 // ─── MODAL ───
 async function faturaAc(id) {
+    if(islemSuruyor || detayYukleniyor) return;
+    detayYukleniyor = true;
     aktifFaturaId=id; aktifIndex=faturalar.indexOf(id);
     // Dosya yolu yerine fatura kimliği kullanılır; özel Supabase bucket'ları da çalışır.
     const pdfSrc = `/fatura/${id}/goruntule`;
@@ -878,18 +863,13 @@ async function faturaAc(id) {
     const kart = document.querySelector(`.fatura-kart[data-id="${id}"]`);
     const firmaAdi = kart?.dataset.firma || 'Firma belirtilmedi';
     const faturaNo = kart?.dataset.faturaNo || '';
-    const satirAlani = document.getElementById('faturaSatirlariAlani');
-    const satirKutusu = document.getElementById('faturaSatirlari');
-    const satirlar = data.satirlar || [];
-    if(satirAlani && satirKutusu) {
-        satirAlani.style.display = satirlar.length ? 'block' : 'none';
-        satirKutusu.innerHTML = satirlar.map(s =>
-            `<div style="padding:4px 0;border-bottom:1px solid var(--border)"><strong>${s.sira}.</strong> ${escapeHtml(s.aciklama)}</div>`
-        ).join('');
-    }
     document.getElementById('modalBaslik').textContent =
         faturaNo ? `${firmaAdi} — ${faturaNo}` : firmaAdi;
     guncelleSayac(); formuTemizle();
+    document.getElementById('onayDurum').textContent = 'Fatura yükleniyor…';
+    document.getElementById('okumaKontrolu').textContent = '';
+    document.getElementById('faturaSatirlari').textContent = '';
+    formKilitle(true);
     faturaBilgiOzetiniGuncelle();
     document.getElementById('onayModal').classList.add('open');
     guncelleOnaylayanGosterim();
@@ -897,10 +877,23 @@ async function faturaAc(id) {
     frameEl.style.opacity = '1';
     try {
         const d = await apiFetch(`/api/fatura/${id}/detay`);
+        if(d.hata || !d.id) throw new Error(d.hata || 'Fatura okunamadı.');
+        aktifDurum = d.durum;
+        aktifParaBirimi = d.para_birimi || 'TRY';
+        const satirlar = d.satirlar || [];
+        document.getElementById('faturaSatirlariAlani').style.display = satirlar.length ? 'block' : 'none';
+        document.getElementById('faturaSatirlari').innerHTML = satirlar.map(s =>
+            `<div style="padding:6px 0;border-bottom:1px solid var(--border)"><strong>${s.sira}.</strong> ${escapeHtml(s.aciklama)}<br><small>Miktar: ${escapeHtml(s.miktar)} ${escapeHtml(s.birim)} · Birim fiyat: ${escapeHtml(s.birim_fiyat)} · Tutar: ${escapeHtml(s.satir_tutar)}</small></div>`).join('');
+        document.getElementById('okumaKontrolu').textContent =
+            `Kaynak: ${d.kaynak} · VKN: ${d.vkn || '—'} · KDV: ${d.kdv || '—'} ${aktifParaBirimi}. ` + (d.uyarilar || []).join(' ');
+        document.getElementById('onayDurum').textContent = d.durum === 'onaylandi'
+            ? `✓ Damga ve onay notu doğrulandı — ${d.onaylayan_ad}. Aynı faturadasınız; geçmek için ← / → kullanın.`
+            : ({reddedildi:'Reddedildi',eksik_bilgi:'Eksik bilgi',bekliyor:'Onay bekliyor'}[d.durum] || d.durum);
+
         if(d.fatura_no) document.getElementById('fFaturaNo').value=d.fatura_no;
         if(d.firma_adi) document.getElementById('fFirma').value=d.firma_adi;
         if(d.fatura_tarihi) document.getElementById('fTarih').value=d.fatura_tarihi;
-        if(d.tutar) document.getElementById('fTutar').value=d.tutar;
+        if(d.tutar !== '') document.getElementById('fTutar').value=d.tutar;
         faturaBilgiOzetiniGuncelle();
         if(d.not_alani) document.getElementById('notAlani').value=d.not_alani;
         if(d.odeme_notu) document.getElementById('odemeNotu').value=d.odeme_notu;
@@ -916,7 +909,12 @@ async function faturaAc(id) {
                 }
             }
         }
-    } catch(e){}
+        formKilitle(d.durum === 'onaylandi');
+        if(d.onaylayan_ad) document.getElementById('onaylayanAd').textContent = d.onaylayan_ad;
+    } catch(e){
+        document.getElementById('onayDurum').textContent = e.message || 'Fatura açılamadı.';
+    } finally { detayYukleniyor = false; }
+
 }
 
 function faturaBilgiOzetiniGuncelle() {
@@ -925,7 +923,7 @@ function faturaBilgiOzetiniGuncelle() {
     const firma = document.getElementById('fFirma')?.value?.trim() || 'Firma belirtilmedi';
     const tutarDegeri = document.getElementById('fTutar')?.value;
     const tutar = tutarDegeri && !isNaN(Number(tutarDegeri))
-        ? Number(tutarDegeri).toLocaleString('tr-TR', {minimumFractionDigits:2, maximumFractionDigits:2}) + ' TL'
+        ? Number(tutarDegeri).toLocaleString('tr-TR', {minimumFractionDigits:2, maximumFractionDigits:2}) + ' ' + aktifParaBirimi
         : 'Tutar yok';
     document.getElementById('ozetFaturaNo').textContent = no;
     document.getElementById('ozetTarih').textContent = tarih;
@@ -947,6 +945,7 @@ function guncelleSayac() {
 }
 
 function kapat() {
+    if(islemSuruyor || detayYukleniyor) return;
     document.getElementById('onayModal').classList.remove('open');
     document.getElementById('pdfFrame').src='';
     if(aktifPdfObjectUrl) {
@@ -956,9 +955,11 @@ function kapat() {
 }
 
 function oncekiFatura() {
+    if(islemSuruyor || detayYukleniyor) return;
     if(aktifIndex>0){aktifIndex--;faturaAc(faturalar[aktifIndex],dosyaAdlari[aktifIndex]);}
 }
 function sonrakiFatura() {
+    if(islemSuruyor || detayYukleniyor) return;
     if(aktifIndex<faturalar.length-1){aktifIndex++;faturaAc(faturalar[aktifIndex],dosyaAdlari[aktifIndex]);}
 }
 
@@ -966,40 +967,54 @@ document.getElementById('onayModal').addEventListener('click',function(e){if(e.t
 document.addEventListener('keydown',e=>{
     if(!document.getElementById('onayModal').classList.contains('open'))return;
     if(e.key==='Escape')kapat();
-    if(e.key==='ArrowRight')sonrakiFatura();
-    if(e.key==='ArrowLeft')oncekiFatura();
+    if(e.target.closest('input,textarea,select,[contenteditable="true"]')) return;
+    if(e.key==='ArrowRight'){e.preventDefault();sonrakiFatura();}
+    if(e.key==='ArrowLeft'){e.preventDefault();oncekiFatura();}
 });
 
 // ─── ONAYLA ───
+function formKilitle(kilitli) {
+    for(const selector of ['#faturaBilgiForm input', '#notAlani', '#odemeNotu', '#projeSayisi', '#projeSatirlari input', '#projeSatirlari select', '#onayModal button[onclick^="onayla"]', '#onayModal button[onclick="aktarPanelAc()"]']) {
+        document.querySelectorAll(selector).forEach(el => el.disabled = kilitli);
+    }
+    document.getElementById('projeSatirlari').style.pointerEvents = kilitli ? 'none' : '';
+}
+
 async function onayla(durum) {
-    if(!aktifFaturaId) return;
+    if(!aktifFaturaId || islemSuruyor || detayYukleniyor || aktifDurum === 'onaylandi') return;
+    const id = aktifFaturaId;
     const sayi = parseInt(document.getElementById('projeSayisi').value)||1;
     const projeler = [];
     for(let i=1;i<=sayi;i++) {
         const anaId = document.getElementById(`anaPrj${i}`)?.value;
         const altId = document.getElementById(`altPrj${i}`)?.value;
-        if(anaId) projeler.push({ana_proje_id: parseInt(anaId)||null, alt_proje_id: parseInt(altId)||null});
+        if(anaId) projeler.push({ana_proje_id: Number(anaId), alt_proje_id: Number(altId)||null});
     }
-    await apiFetch(`/api/fatura/${aktifFaturaId}/bilgi`,'POST',{
-        fatura_no: document.getElementById('fFaturaNo').value,
-        firma_adi: document.getElementById('fFirma').value,
-        fatura_tarihi: document.getElementById('fTarih').value,
-        tutar: parseFloat(document.getElementById('fTutar').value)||null,
-    });
-    const res = await apiFetch(`/api/fatura/${aktifFaturaId}/onayla`,'POST',{
-        projeler, durum,
-        fatura_no: document.getElementById('fFaturaNo').value,
-        firma_adi: document.getElementById('fFirma').value,
-        fatura_tarihi: document.getElementById('fTarih').value,
-        tutar: parseFloat(document.getElementById('fTutar').value)||null,
-        not_alani: document.getElementById('notAlani').value,
-        odeme_notu: document.getElementById('odemeNotu').value,
-    });
-    if(res.basarili) {
-        const etiket={onaylandi:'Onaylandı ✓',reddedildi:'Reddedildi ✗',eksik_bilgi:'Eksik Bilgi !'};
-        toast(durum === 'onaylandi' ? 'Onay notu, onaylayan ve tarih kaydedildi. Sonraki faturaya geçmek için → kullanın.' : (etiket[durum]||'Kaydedildi'),'success');
-        // Onaydan sonra aynı faturada kal. Kullanıcı açıkça yön tuşuna
-        // veya Sonraki düğmesine basmadan başka faturaya geçme.;
+    islemSuruyor = true;
+    formKilitle(true);
+    document.getElementById('onayDurum').textContent = 'İşlem sürüyor; belge kaydı ve doğrulama bekleniyor…';
+    try {
+        const res = await apiFetch(`/api/fatura/${id}/onayla`, 'POST', {
+            projeler, durum, fatura_no: document.getElementById('fFaturaNo').value,
+            firma_adi: document.getElementById('fFirma').value,
+            fatura_tarihi: document.getElementById('fTarih').value,
+            tutar: document.getElementById('fTutar').value,
+            not_alani: document.getElementById('notAlani').value,
+            odeme_notu: document.getElementById('odemeNotu').value,
+        });
+        if(!res.basarili) throw new Error(res.hata || 'Onay kaydedilemedi.');
+        const kart = document.querySelector(`.fatura-kart[data-id="${id}"]`);
+        if(kart) kart.dataset.durum = durum;
+        islemSuruyor = false;
+        await faturaAc(id);
+        document.getElementById('pdfFrame').src = `/fatura/${id}/goruntule?v=${Date.now()}`;
+        toast(durum === 'onaylandi' ? 'Damga ve onay notu doğrulandı. Aynı faturadasınız.' : 'Durum kaydedildi.', 'success');
+    } catch(e) {
+        document.getElementById('onayDurum').textContent = 'İşlem tamamlanamadı: ' + e.message;
+        toast(e.message, 'error');
+    } finally {
+        islemSuruyor = false;
+        formKilitle(aktifDurum === 'onaylandi');
     }
 }
 
@@ -1065,7 +1080,7 @@ function filtreleVeSirala() {
         return sirala === 'eski' ? fark : -fark;
     });
     kartlar.forEach(k => album?.appendChild(k));
-    faturalar = kartlar.map(k => Number(k.dataset.id));
+    faturalar = kartlar.filter(k => k.style.display !== 'none').map(k => Number(k.dataset.id));
 }
 
 // Yıl dropdown'ını doldur

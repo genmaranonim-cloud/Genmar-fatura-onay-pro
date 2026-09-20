@@ -1,0 +1,9 @@
+.git
+__pycache__
+.pytest_cache
+pro-data
+database
+static/uploads
+tests
+*.db
+.env

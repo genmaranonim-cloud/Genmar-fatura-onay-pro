@@ -4,3 +4,8 @@ __pycache__/
 database/
 static/uploads/
 .env
+
+pro-data/
+*.db
+.initial-password
+.session-key

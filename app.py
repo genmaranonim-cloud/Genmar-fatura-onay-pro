@@ -11,7 +11,11 @@ from sqlalchemy import inspect, text
 from datetime import datetime
 from werkzeug.security import generate_password_hash, check_password_hash
 from werkzeug.utils import secure_filename
-import os, shutil, json, functools, base64, unicodedata
+import os, shutil, json, functools, base64, unicodedata, secrets
+from pathlib import Path
+from decimal import Decimal
+from invoice_reader import bundle_files
+from pro_documents import DocumentStore, derived_pdf, make_approval, verify_approval, digest
 import requests as http_requests
 from urllib.parse import quote, unquote, urlparse
 import re
@@ -19,8 +23,11 @@ import openpyxl
 import xlrd
 
 app = Flask(__name__)
-APP_VERSION = 'V0.2 – TEST'
-app.config['SECRET_KEY'] = os.environ.get('SECRET_KEY', 'genmar-fatura-2026')
+if os.environ.get('RAILWAY_ENVIRONMENT_ID'):
+    from werkzeug.middleware.proxy_fix import ProxyFix
+    app.wsgi_app = ProxyFix(app.wsgi_app, x_proto=1, x_host=1)
+APP_VERSION = 'V0.2 – TEST • Pro 2026.09.20'
+
 app.config['JSON_AS_ASCII'] = False
 app.json.ensure_ascii = False
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
@@ -37,27 +44,27 @@ def turkce_karakter_kodlamasi(response):
         response.content_type = f'{response.mimetype}; charset=utf-8'
     return response
 
-# Veritabanı: Bulutta PostgreSQL, lokalde SQLite
-DATABASE_URL = os.environ.get('DATABASE_URL', '')
-if DATABASE_URL and 'pg8000' not in DATABASE_URL and '+' not in DATABASE_URL.split('://')[0]:
-    DATABASE_URL = DATABASE_URL.replace('postgresql://', 'postgresql+pg8000://', 1).replace('postgres://', 'postgresql+pg8000://', 1)
-if DATABASE_URL.startswith('postgresql://') and 'psycopg' not in DATABASE_URL:
-    DATABASE_URL = DATABASE_URL.replace('postgresql://', 'postgresql+psycopg2://', 1)
-app.config['SQLALCHEMY_DATABASE_URI'] = DATABASE_URL or f'sqlite:///{os.path.join(BASE_DIR, "database", "fatura.db")}'
-app.config['SQLALCHEMY_TRACK_MODIFICATIONS'] = False
-app.config['UPLOAD_FOLDER'] = os.path.join(BASE_DIR, 'static', 'uploads')
-app.config['MAX_CONTENT_LENGTH'] = 50 * 1024 * 1024
-
-# Supabase Storage konfigürasyonu
-SUPABASE_URL = os.environ.get('SUPABASE_URL', '')
-SUPABASE_KEY = os.environ.get('SUPABASE_KEY', '')
-SUPABASE_BUCKET = os.environ.get('SUPABASE_BUCKET', 'faturalar')
-BULUT_MOD = bool(SUPABASE_URL and SUPABASE_KEY)
-
-# Eski faturalar Cloudinary'de tutuluyor.
-CLOUDINARY_CLOUD_NAME = os.environ.get('CLOUDINARY_CLOUD_NAME', '')
-CLOUDINARY_API_KEY = os.environ.get('CLOUDINARY_API_KEY', '')
-CLOUDINARY_API_SECRET = os.environ.get('CLOUDINARY_API_SECRET', '')
+# Pro is intentionally isolated: never consume legacy database/storage variables.
+if os.environ.get('RAILWAY_SERVICE_NAME', '').casefold() == 'fatura-onay-production':
+    raise RuntimeError('Eski canlı serviste Pro çalıştırılamaz.')
+DATA_DIR = Path(os.environ.get('PRO_DATA_DIR', str(Path(BASE_DIR) / 'pro-data'))).resolve()
+DATA_DIR.mkdir(parents=True, exist_ok=True)
+if os.environ.get('RAILWAY_ENVIRONMENT_ID') and not os.environ.get('RAILWAY_VOLUME_MOUNT_PATH'):
+    raise RuntimeError('Pro için ayrı kalıcı disk bağlanmalıdır.')
+secret_file = DATA_DIR / '.session-key'
+if not secret_file.exists():
+    secret_file.write_text(secrets.token_hex(32), encoding='ascii')
+app.config.update(SECRET_KEY=secret_file.read_text().strip(),
+    SQLALCHEMY_DATABASE_URI='sqlite:///' + str(DATA_DIR / 'genmar-pro.db'),
+    SQLALCHEMY_TRACK_MODIFICATIONS=False,
+    SQLALCHEMY_ENGINE_OPTIONS={'connect_args': {'timeout': 30}},
+    UPLOAD_FOLDER=str(DATA_DIR / 'documents'), MAX_CONTENT_LENGTH=50 * 1024 * 1024,
+    SESSION_COOKIE_HTTPONLY=True, SESSION_COOKIE_SAMESITE='Lax',
+    SESSION_COOKIE_SECURE=bool(os.environ.get('RAILWAY_ENVIRONMENT_ID')))
+SUPABASE_URL = SUPABASE_KEY = SUPABASE_BUCKET = ''
+CLOUDINARY_CLOUD_NAME = CLOUDINARY_API_KEY = CLOUDINARY_API_SECRET = ''
+BULUT_MOD = False
+store = DocumentStore(app.config['UPLOAD_FOLDER'])
 
 def supabase_yukle(dosya_bytes, dosya_yolu):
     """Supabase Storage'a dosya yükle, public URL döndür."""
@@ -333,7 +340,7 @@ class Kullanici(db.Model):
         return (p[0][0]+p[-1][0]).upper() if len(p)>=2 else p[0][0].upper()
     def sifre_kontrol(self, sifre):
         if not self.sifre_hash:
-            return sifre == '1'
+            return False
         return check_password_hash(self.sifre_hash, sifre)
     def sifre_ayarla(self, sifre):
         self.sifre_hash = generate_password_hash(sifre)
@@ -360,6 +367,7 @@ class FaturaProje(db.Model):
     alt_proje_id = db.Column(db.Integer, db.ForeignKey('alt_proje.id'))
     sira = db.Column(db.Integer, default=1)
     ana_proje = db.relationship('AnaProje')
+    alt_proje = db.relationship('AltProje')
 
 STANDART_ALT_KIRILIMLAR = (
     ('YI-EHS-ELKT', 'EHS Elektrik'),
@@ -417,7 +425,6 @@ def standart_alt_kirilimlari_ekle(ana_projeler=None, commit=True):
     if commit:
         db.session.commit()
     return eklenen
-    alt_proje = db.relationship('AltProje')
 
 class Fatura(db.Model):
     id = db.Column(db.Integer, primary_key=True)
@@ -445,6 +452,16 @@ class Fatura(db.Model):
     departman = db.relationship('Departman')
     ana_proje = db.relationship('AnaProje')
     alt_proje = db.relationship('AltProje')
+    vkn = db.Column(db.String(20))
+    belge_uuid = db.Column(db.String(80))
+    kimlik = db.Column(db.String(160), unique=True)
+    kdv = db.Column(db.Numeric(20, 4))
+    okuma_json = db.Column(db.Text)
+    kaynak_belgeler = db.Column(db.Text)
+    orijinal_pdf = db.Column(db.String(255))
+    onay_kimligi = db.Column(db.String(40))
+    onay_hash = db.Column(db.String(64))
+    pdf_hash = db.Column(db.String(64))
     proje_satirlari = db.relationship('FaturaProje', backref='fatura', cascade='all, delete-orphan')
     satirlar = db.relationship('FaturaSatir', backref='fatura', cascade='all, delete-orphan',
                               order_by='FaturaSatir.sira')
@@ -454,6 +471,10 @@ class FaturaSatir(db.Model):
     fatura_id = db.Column(db.Integer, db.ForeignKey('fatura.id'), nullable=False, index=True)
     sira = db.Column(db.Integer, nullable=False)
     aciklama = db.Column(db.Text, nullable=False)
+    miktar = db.Column(db.Numeric(20, 6))
+    birim = db.Column(db.String(20))
+    birim_fiyat = db.Column(db.Numeric(20, 6))
+    satir_tutar = db.Column(db.Numeric(20, 6))
 
 # ─── YARDIMCI ───────────────────────────────────────────────────────────────
 
@@ -735,90 +756,11 @@ def supabase_dosya_yolu(public_url):
     return public_url
 
 def fatura_pdf_bytes_ve_adres(fatura):
-    """Faturanın PDF içeriğini ve kullanıcıya gösterilecek dosya adını döndür."""
-    kayit = (fatura.dosya_adi or '').strip()
-    if not kayit:
-        raise FileNotFoundError('Fatura dosya yolu boş')
-
-    if kayit.startswith(('http://', 'https://')):
-        netloc = urlparse(kayit).netloc.lower()
-        if netloc == 'res.cloudinary.com':
-            data = cloudinary_indir(kayit)
-        elif SUPABASE_URL and SUPABASE_KEY:
-            data = supabase_indir(kayit)
-        else:
-            r = http_requests.get(kayit, timeout=30)
-            r.raise_for_status()
-            data = r.content
-        ad = os.path.basename(unquote(urlparse(kayit).path)) or 'fatura.pdf'
-        return data, ad
-
-    tam_yol = os.path.abspath(os.path.join(
-        app.config['UPLOAD_FOLDER'], kayit.replace('/', os.sep)
-    ))
-    upload_root = os.path.abspath(app.config['UPLOAD_FOLDER'])
-    if os.path.commonpath([tam_yol, upload_root]) != upload_root:
-        raise FileNotFoundError('Geçersiz fatura dosya yolu')
-    if not os.path.isfile(tam_yol):
-        raise FileNotFoundError(tam_yol)
-    with open(tam_yol, 'rb') as pdf_file:
-        return pdf_file.read(), os.path.basename(tam_yol)
+    return store.read(fatura.dosya_adi), f'fatura-{fatura.id}.pdf'
 
 def fatura_onay_damgasi_uygula(fatura, kullanici=None):
-    kullanici = kullanici or fatura.onaylayan or aktif_kullanici()
-    proje_satirlari = sorted(fatura.proje_satirlari, key=lambda x: x.sira)
-    projeler = [
-        {
-            'ana': satir.ana_proje.kod if satir.ana_proje else '-',
-            'alt': satir.alt_proje.kod if satir.alt_proje else '-',
-        }
-        for satir in proje_satirlari
-    ]
-    if not projeler and (fatura.ana_proje or fatura.alt_proje):
-        projeler = [{
-            'ana': fatura.ana_proje.kod if fatura.ana_proje else '-',
-            'alt': fatura.alt_proje.kod if fatura.alt_proje else '-',
-        }]
+    raise ValueError('Damga yalnızca doğrulamalı onay işlemiyle oluşturulur.')
 
-    pdf_bytes, _ = fatura_pdf_bytes_ve_adres(fatura)
-    damgali_pdf = pdf_damga_bytes(pdf_bytes, {
-        'projeler': projeler,
-        'not_alani': fatura.not_alani or '-',
-        'odeme_notu': fatura.odeme_notu or '-',
-        'onaylayan_ad': kullanici.ad_soyad if kullanici else '-',
-        'departman_kod': (
-            kullanici.departman.kod if kullanici and kullanici.departman
-            else (fatura.departman.kod if fatura.departman else '-')
-        ),
-        'tarih': (fatura.onay_tarihi or datetime.utcnow()).strftime('%d.%m.%Y %H:%M'),
-        'kisaltma': kullanici.kisaltma if kullanici else '',
-    })
-
-    if BULUT_MOD:
-        if fatura.dosya_adi.startswith(SUPABASE_URL):
-            eski_yol = supabase_dosya_yolu(fatura.dosya_adi)
-            klasor = os.path.dirname(eski_yol).replace('\\', '/')
-            kok_ad = os.path.splitext(os.path.basename(eski_yol))[0]
-            # Aynı nesneye upsert edildiğinde CDN kısa süre eski PDF'yi
-            # gösterebiliyor. Her damgada yeni URL oluşturarak bunu önle.
-            yeni_ad = f"{secure_filename(kok_ad)}_onay_{datetime.now().strftime('%Y%m%d%H%M%S%f')}.pdf"
-            dosya_yolu = f"{klasor}/{yeni_ad}" if klasor else yeni_ad
-        else:
-            guvenli_ad = secure_filename(
-                f"{fatura.firma_adi or 'fatura'}_{fatura.fatura_no or fatura.id}.pdf"
-            )
-            kok_ad = os.path.splitext(guvenli_ad)[0]
-            yeni_ad = f"{kok_ad}_onay_{datetime.now().strftime('%Y%m%d%H%M%S%f')}.pdf"
-            dosya_yolu = f"faturalar/{datetime.now().year}/{datetime.now().month:02d}/{yeni_ad}"
-        fatura.dosya_adi = supabase_yukle(damgali_pdf, dosya_yolu)
-        db.session.commit()
-    else:
-        pdf_yolu = os.path.join(app.config['UPLOAD_FOLDER'],
-                                fatura.dosya_adi.replace('/', os.sep))
-        with open(pdf_yolu, 'wb') as damgali_dosya:
-            damgali_dosya.write(damgali_pdf)
-
-    return True
 
 def seed_data():
     # Eski örnek kullanıcıyı kaldır; varsa onay ve atama geçmişini Dilek Kaya'ya taşı.
@@ -860,7 +802,12 @@ def seed_data():
         ]); db.session.commit()
     if Kullanici.query.count() == 0:
         muh = Departman.query.filter_by(kod='MUH').first()
-        db.session.add(Kullanici(ad_soyad='Dilek Kaya', departman_id=muh.id))
+        admin = Kullanici(ad_soyad='Dilek Kaya', departman_id=muh.id)
+        initial_password = os.environ.get('PRO_ADMIN_PASSWORD') or secrets.token_urlsafe(20)
+        admin.sifre_ayarla(initial_password)
+        if not os.environ.get('PRO_ADMIN_PASSWORD'):
+            (DATA_DIR / '.initial-password').write_text(initial_password, encoding='utf-8')
+        db.session.add(admin)
         db.session.commit()
 
 # ─── LOGIN ──────────────────────────────────────────────────────────────────
@@ -879,8 +826,6 @@ def login():
                      .replace('ş','s').replace('ö','o').replace('ç','c').lower()
         tum = Kullanici.query.all()
         k = next((x for x in tum if normalize_tr(x.ad_soyad) == normalize_tr(ad)), None)
-        if not k:
-            k = next((x for x in tum if normalize_tr(ad) in normalize_tr(x.ad_soyad)), None)
         if k and k.sifre_kontrol(sifre):
             session['kullanici_id'] = k.id
             session['kullanici_ad'] = k.ad_soyad
@@ -954,85 +899,56 @@ def gelen_faturalar():
 @app.route('/api/upload', methods=['POST'])
 @login_gerekli
 def upload_fatura():
-    dosyalar = [d for d in request.files.getlist('dosyalar') if d and d.filename]
-    if not dosyalar:
-        return jsonify({'hata': 'Dosya bulunamadı'}), 400
-
-    xml_verileri = []
-    for dosya in dosyalar:
-        if dosya.filename.lower().endswith('.xml'):
-            try:
-                xml_verileri.append((os.path.splitext(secure_filename(dosya.filename))[0].casefold(),
-                                     read_ubl_invoice(dosya.read())))
-            except Exception as e:
-                return jsonify({'hata': f'XML okunamadı ({dosya.filename}): {e}'}), 400
-
-    pdfler = [d for d in dosyalar if d.filename.lower().endswith('.pdf')]
-    if not pdfler:
-        return jsonify({'hata': 'Görüntüleme için XML ile birlikte PDF de seçilmelidir.'}), 400
-
-    yuklenenler = []
-    for dosya in pdfler:
-        dosya_adi = dosya.filename
-        dosya_bytes = dosya.read()
-        not_kullanicisi = pdf_notundan_kullanici_bul(dosya_bytes)
-        pdf_tarihi, pdf_tutari = pdf_tarih_ve_tutar_bul(dosya_bytes)
-        fno, firma = dosyadan_bilgi_cek(dosya_adi)
-        pdf_kok = os.path.splitext(secure_filename(dosya_adi))[0].casefold()
-        xml = next((x for kok, x in xml_verileri if kok == pdf_kok), None)
-        if xml is None and len(xml_verileri) == 1 and len(pdfler) == 1:
-            xml = xml_verileri[0][1]
-        if xml:
-            fno = xml.get('fatura_no') or fno
-            firma = xml.get('firma_adi') or firma
-            pdf_tarihi = xml.get('fatura_tarihi') or pdf_tarihi
-            pdf_tutari = xml.get('tutar') if xml.get('tutar') is not None else pdf_tutari
-
-        simdi = datetime.now()
-        if BULUT_MOD:
-            depo_dosya_adi = secure_filename(dosya_adi)
-            dosya_yolu = f"faturalar/{simdi.year}/{simdi.month:02d}/{depo_dosya_adi}"
-            goreli_yol = supabase_yukle(dosya_bytes, dosya_yolu)
-        else:
-            ay_klasor = os.path.join(app.config['UPLOAD_FOLDER'], str(simdi.year), f'{simdi.month:02d}')
-            os.makedirs(ay_klasor, exist_ok=True)
-            with open(os.path.join(ay_klasor, dosya_adi), 'wb') as yerel_pdf:
-                yerel_pdf.write(dosya_bytes)
-            goreli_yol = f"{simdi.year}/{simdi.month:02d}/{dosya_adi}"
-
-        sade_dosya_adi = secure_filename(dosya_adi).casefold()
-        mevcut = next((kayit for kayit in Fatura.query.all()
-                       if secure_filename(os.path.basename(unquote(kayit.dosya_adi or ''))).casefold() == sade_dosya_adi
-                       or (fno and kayit.fatura_no == fno)), None)
-        aciklama = approval_description(xml) if xml else ''
-        if mevcut:
-            mevcut.dosya_adi = goreli_yol
-            if mevcut.durum == 'bekliyor':
-                mevcut.atama_tamamlandi = False
-            mevcut.fatura_no = fno or mevcut.fatura_no
-            mevcut.firma_adi = firma or mevcut.firma_adi
-            mevcut.fatura_tarihi = pdf_tarihi or mevcut.fatura_tarihi
-            mevcut.tutar = pdf_tutari if pdf_tutari is not None else mevcut.tutar
-            if xml:
-                mevcut.para_birimi = xml.get('para_birimi') or mevcut.para_birimi
-                mevcut.not_alani = mevcut.not_alani or aciklama
-                fatura_satirlarini_yenile(mevcut, xml)
-            if not_kullanicisi:
-                mevcut.atanan_id = not_kullanicisi.id
-        else:
-            yeni_fatura = Fatura(dosya_adi=goreli_yol, kaynak='xml+pdf' if xml else 'upload',
-                                 fatura_no=fno or None, firma_adi=firma or None,
-                                 fatura_tarihi=pdf_tarihi, tutar=pdf_tutari,
-                                 para_birimi=(xml.get('para_birimi') if xml else 'TRY') or 'TRY',
-                                 not_alani=aciklama or None,
-                                 atanan_id=not_kullanicisi.id if not_kullanicisi else None)
-            fatura_satirlarini_yenile(yeni_fatura, xml)
-            db.session.add(yeni_fatura)
-        yuklenenler.append(dosya_adi)
-
-    db.session.commit()
-    return jsonify({'basarili': True, 'yuklenen': len(yuklenenler),
-                    'xml_okunan': len(xml_verileri)})
+    files = [(f.filename, f.read()) for f in request.files.getlist('dosyalar') if f.filename]
+    if not files or len(files) > 50:
+        return jsonify(hata='1–50 belge seçin.'), 400
+    written = []
+    try:
+        groups = bundle_files(files)
+        created = []
+        for group in groups:
+            primary = min(group, key=lambda i: {'xml': 0, 'html': 1, 'pdf': 2}[i['data'].source_type])
+            data = primary['data']
+            identity = ('uuid:' + data.uuid.casefold()) if data.uuid else (
+                'no:' + data.supplier_tax_id + ':' + data.invoice_no if data.invoice_no and data.supplier_tax_id
+                else 'sha:' + digest(primary['raw']))
+            if Fatura.query.filter_by(kimlik=identity).first():
+                raise ValueError('Bu fatura zaten kayıtlı. Mevcut belge ve onay korunmuştur.')
+            sources = []
+            pdf_key = None
+            for item in group:
+                key = store.put(item['raw'], Path(item['name']).suffix.lower())
+                written.append(key)
+                sources.append({'name': Path(item['name']).name, 'key': key, 'sha256': digest(item['raw'])})
+                if item['data'].source_type == 'pdf':
+                    pdf_key = key
+            if not pdf_key:
+                pdf_key = store.put(derived_pdf(data))
+                written.append(pdf_key)
+            invoice = Fatura(dosya_adi=pdf_key, orijinal_pdf=pdf_key,
+                fatura_no=data.invoice_no, firma_adi=data.supplier_name,
+                fatura_tarihi=data.issue_date, tutar=Decimal(data.payable_total) if data.payable_total is not None else None,
+                para_birimi=data.currency, vkn=data.supplier_tax_id, belge_uuid=data.uuid, kimlik=identity,
+                kdv=Decimal(data.tax_total) if data.tax_total is not None else None,
+                kaynak='+'.join(sorted(i['data'].source_type for i in group)),
+                okuma_json=json.dumps(data.to_dict(), ensure_ascii=False),
+                kaynak_belgeler=json.dumps(sources, ensure_ascii=False),
+                not_alani=', '.join(l.description for l in data.lines)[:4000])
+            for i, line in enumerate(data.lines, 1):
+                invoice.satirlar.append(FaturaSatir(sira=i, aciklama=line.description,
+                    miktar=line.quantity, birim=line.unit_code, birim_fiyat=line.unit_price,
+                    satir_tutar=line.line_total))
+            db.session.add(invoice)
+            db.session.flush()
+            created.append(invoice.id)
+        db.session.commit()
+        return jsonify(basarili=True, yuklenen=len(created), ids=created)
+    except Exception as exc:
+        db.session.rollback()
+        for key in written:
+            store.delete(key)
+        app.logger.warning('Pro upload rejected: %s', type(exc).__name__)
+        return jsonify(hata=str(exc) if isinstance(exc, ValueError) else 'Belge okunamadı veya kaydedilemedi; hiçbir fatura eklenmedi.'), 400
 
 @app.route('/api/excel-fatura-bilgileri', methods=['POST'])
 @login_gerekli
@@ -1129,13 +1045,21 @@ def fatura_detay(fatura_id):
                  'alt_kod': p.alt_proje.kod if p.alt_proje else '',
                  'alt_ad': p.alt_proje.ad if p.alt_proje else ''}
                 for p in sorted(f.proje_satirlari, key=lambda x: x.sira)]
-    pdf_url = f.dosya_adi
+    pdf_url = url_for('fatura_pdf', fatura_id=f.id)
     return jsonify({
         'id': f.id, 'fatura_no': f.fatura_no or '',
         'firma_adi': f.firma_adi or '', 'fatura_tarihi': f.fatura_tarihi or '',
-        'tutar': f.tutar or '', 'not_alani': f.not_alani or '',
+        'tutar': f.tutar if f.tutar is not None else '', 'not_alani': f.not_alani or '',
         'odeme_notu': f.odeme_notu or '',
-        'satirlar': [{'sira': s.sira, 'aciklama': s.aciklama} for s in f.satirlar],
+        'satirlar': [{'sira': s.sira, 'aciklama': s.aciklama,
+            'miktar': str(s.miktar) if s.miktar is not None else '', 'birim': s.birim or '',
+            'birim_fiyat': str(s.birim_fiyat) if s.birim_fiyat is not None else '',
+            'satir_tutar': str(s.satir_tutar) if s.satir_tutar is not None else ''} for s in f.satirlar],
+        'durum': f.durum, 'vkn': f.vkn or '', 'para_birimi': f.para_birimi,
+        'kdv': str(f.kdv) if f.kdv is not None else '', 'kaynak': f.kaynak,
+        'uyarilar': json.loads(f.okuma_json or '{}').get('warnings', []),
+        'onay_kimligi': f.onay_kimligi, 'onaylayan_ad': f.onaylayan.ad_soyad if f.onaylayan else '',
+        'onay_tarihi': f.onay_tarihi.isoformat() if f.onay_tarihi else '',
         'projeler': projeler,
         'onaylayan_id': f.onaylayan_id, 'atanan_id': f.atanan_id,
         'pdf_url': pdf_url,
@@ -1167,54 +1091,86 @@ def fatura_sil(fatura_id):
 @app.route('/api/fatura/<int:fatura_id>/damgala', methods=['POST'])
 @login_gerekli
 def onayli_faturayi_damgala(fatura_id):
-    fatura = gorulebilir_fatura_veya_404(fatura_id)
-    if fatura.durum != 'onaylandi':
-        return jsonify({'hata': 'Yalnızca onaylanmış faturalar damgalanabilir.'}), 400
-    try:
-        fatura_onay_damgasi_uygula(fatura)
-        return jsonify({'basarili': True})
-    except Exception as e:
-        app.logger.exception('Onay damgası hatası: %s', e)
-        return jsonify({'hata': 'Onay damgası PDF dosyasına eklenemedi.'}), 500
+    return jsonify(hata='Damga onay sırasında otomatik doğrulanır.'), 409
 
 @app.route('/api/fatura/<int:fatura_id>/onayla', methods=['POST'])
 @login_gerekli
 def fatura_onayla(fatura_id):
     fatura = gorulebilir_fatura_veya_404(fatura_id)
-    data = request.json
-
-    # Çoklu proje satırlarını kaydet
-    FaturaProje.query.filter_by(fatura_id=fatura_id).delete()
-    projeler = data.get('projeler', [])
-    for i, p in enumerate(projeler):
-        if p.get('ana_proje_id'):
-            db.session.add(FaturaProje(
-                fatura_id=fatura_id,
-                ana_proje_id=p['ana_proje_id'] or None,
-                alt_proje_id=p.get('alt_proje_id') or None,
-                sira=i+1
-            ))
-    if projeler and projeler[0].get('ana_proje_id'):
-        fatura.ana_proje_id = projeler[0]['ana_proje_id']
-        fatura.alt_proje_id = projeler[0].get('alt_proje_id')
-
-    # Fatura bilgilerini onayla aynı işlemde kaydet. Böylece ayrı bilgi
-    # isteği aksasa bile Onaylananlar ekranında firma adı boş kalmaz.
-    fatura.fatura_no = metin_degeri(data.get('fatura_no', fatura.fatura_no)) or fatura.fatura_no
-    fatura.firma_adi = metin_degeri(data.get('firma_adi', fatura.firma_adi)) or fatura.firma_adi
-    fatura.fatura_tarihi = metin_degeri(data.get('fatura_tarihi', fatura.fatura_tarihi)) or fatura.fatura_tarihi
-    if data.get('tutar') not in (None, ''):
-        fatura.tutar = data.get('tutar')
-    fatura.not_alani = metin_degeri(data.get('not_alani',''))
-    fatura.odeme_notu = metin_degeri(data.get('odeme_notu',''))
-    fatura.onaylayan_id = data.get('kullanici_id') or session.get('kullanici_id')
-    fatura.departman_id = data.get('departman_id') or session.get('departman_id')
-    fatura.durum = data.get('durum', 'onaylandi')
-    fatura.onay_tarihi = datetime.utcnow()
-    db.session.commit()
-
-    # PDF değiştirilmez. Onay notu, onaylayan ve tarih veritabanında saklanır.
-    return jsonify({'basarili': True, 'onay_notu_kaydedildi': True})
+    data = request.get_json(silent=True) or {}
+    target = data.get('durum', 'onaylandi')
+    if target not in ('onaylandi', 'reddedildi', 'eksik_bilgi'):
+        return jsonify(hata='Geçersiz onay durumu.'), 400
+    if fatura.durum == 'onaylandi':
+        return jsonify(hata='Onaylı fatura salt okunurdur.'), 409
+    stored_key = None
+    try:
+        # Atomic compare-and-set locks this invoice before producing any document.
+        changed = Fatura.query.filter(Fatura.id == fatura_id,
+            Fatura.durum.in_(['bekliyor', 'eksik_bilgi', 'reddedildi'])).update(
+                {'durum': 'onay_isleniyor'}, synchronize_session=False)
+        if changed != 1:
+            db.session.rollback()
+            return jsonify(hata='Bu fatura için başka bir işlem sürüyor.'), 409
+        db.session.refresh(fatura)
+        for key in ('fatura_no', 'firma_adi', 'fatura_tarihi', 'not_alani', 'odeme_notu'):
+            if key in data:
+                value = metin_degeri(data[key])
+                if len(value) > (4000 if key in ('not_alani', 'odeme_notu') else 200):
+                    raise ValueError('Alan uzunluğu sınırı aşıldı.')
+                setattr(fatura, key, value)
+        if data.get('tutar') not in (None, ''):
+            value = Decimal(str(data['tutar']))
+            if not value.is_finite() or value < 0:
+                raise ValueError('Geçerli tutar girin.')
+            fatura.tutar = float(value)
+        if target == 'onaylandi' and (not fatura.fatura_no or not fatura.firma_adi or
+                not fatura.fatura_tarihi or fatura.tutar is None):
+            raise ValueError('Fatura no, firma, tarih ve tutarı kontrol edin.')
+        fatura.proje_satirlari.clear()
+        projects = []
+        for i, item in enumerate(data.get('projeler', []), 1):
+            parent = db.session.get(AnaProje, item.get('ana_proje_id'))
+            child = db.session.get(AltProje, item['alt_proje_id']) if item.get('alt_proje_id') else None
+            if not parent or not parent.aktif or (child and child.ana_proje_id != parent.id):
+                raise ValueError('Proje seçimi geçersiz.')
+            if item.get('alt_proje_id') and not child:
+                raise ValueError('Alt proje bulunamadı.')
+            fatura.proje_satirlari.append(FaturaProje(ana_proje_id=parent.id,
+                alt_proje_id=child.id if child else None, sira=i))
+            projects.append({'ana': parent.kod, 'alt': child.kod if child else '-'})
+        user = aktif_kullanici()
+        fatura.onaylayan_id = user.id
+        fatura.departman_id = user.departman_id
+        fatura.onay_tarihi = datetime.utcnow()
+        db.session.flush()
+        if target == 'onaylandi':
+            payload = {'fatura_no': fatura.fatura_no, 'projeler': projects,
+                'not_alani': fatura.not_alani or '', 'odeme_notu': fatura.odeme_notu or '',
+                'onaylayan_ad': user.ad_soyad, 'kisaltma': user.kisaltma,
+                'departman_kod': user.departman.kod if user.departman else '-',
+                'tarih': fatura.onay_tarihi.isoformat() + ' UTC'}
+            original = store.read(fatura.orijinal_pdf or fatura.dosya_adi)
+            stamped, token, payload_hash = make_approval(original, payload, pdf_damga_bytes)
+            if not verify_approval(stamped, token, payload_hash, payload['not_alani']):
+                raise ValueError('Üretilen PDF damgası/notu doğrulanamadı.')
+            stored_key = store.put(stamped)
+            reread = store.read(stored_key)
+            if digest(reread) != digest(stamped) or not verify_approval(reread, token, payload_hash, payload['not_alani']):
+                raise ValueError('Kaydedilen PDF damgası/notu doğrulanamadı.')
+            fatura.dosya_adi = stored_key
+            fatura.onay_kimligi, fatura.onay_hash, fatura.pdf_hash = token, payload_hash, digest(reread)
+        fatura.durum = target
+        db.session.commit()
+        return jsonify(basarili=True, damga_dogrulandi=target == 'onaylandi',
+                       onay_notu_kaydedildi=True, id=fatura.id)
+    except Exception as exc:
+        db.session.rollback()
+        if stored_key:
+            store.delete(stored_key)
+        app.logger.warning('Pro approval rolled back: %s', type(exc).__name__)
+        return jsonify(hata=str(exc) if isinstance(exc, ValueError) else
+                       'Onay kaydedilemedi. Fatura onaylanmadı; yeniden deneyebilirsiniz.'), 400
 
 @app.route('/api/fatura/<int:fatura_id>/aktar', methods=['POST'])
 @login_gerekli
@@ -1284,17 +1240,10 @@ def alt_projeler(ana_proje_id):
 @app.route('/uploads/<path:dosya_adi>')
 @login_gerekli
 def serve_pdf(dosya_adi):
-    if dosya_adi.startswith('http'):
-        # Supabase public URL'den proxy olarak çek
-        try:
-            data = supabase_indir(dosya_adi)
-            from flask import Response
-            return Response(data, mimetype='application/pdf',
-                            headers={'Content-Disposition': 'inline; filename="fatura.pdf"'})
-        except Exception as e:
-            print(f"PDF proxy hatasi: {e}")
-            return redirect(dosya_adi)
-    return send_from_directory(app.config['UPLOAD_FOLDER'], dosya_adi.replace('/', os.sep))
+    fatura = Fatura.query.filter_by(dosya_adi=dosya_adi).first_or_404()
+    if not fatura_gorulebilir_mi(fatura):
+        abort(404)
+    return fatura_pdf(fatura.id)
 
 @app.route('/api/fatura/<int:fatura_id>/pdf')
 @login_gerekli
@@ -1717,6 +1666,32 @@ def oturum_bilgisi():
                     'departman_kod': k.departman.kod if k.departman else '',
                     'fatura_silebilir': mim_fatura_silme_yetkisi()})
 
+
+@app.before_request
+def pro_request_guard():
+    if request.path == '/health':
+        return None
+    if request.path.startswith(('/api/network-tara', '/api/excel-fatura-bilgileri', '/api/fatura-bilgileri-yeniden-oku')):
+        return jsonify(hata='Bu test sürümünde belge yükleme ekranını kullanın.'), 409
+    if request.path.startswith(('/yonetim', '/api/yonetim', '/api/kullanici-', '/api/proje-')) and not yonetici_mi():
+        abort(403)
+    if request.method in ('POST', 'PUT', 'PATCH', 'DELETE'):
+        origin = request.headers.get('Origin')
+        if origin and origin != request.host_url.rstrip('/'):
+            abort(403)
+        if request.headers.get('Sec-Fetch-Site') == 'cross-site':
+            abort(403)
+        match = re.match(r'/api/fatura/(\d+)/(bilgi|aktar)$', request.path)
+        if match and 'kullanici_id' in session:
+            invoice = gorulebilir_fatura_veya_404(int(match.group(1)))
+            if invoice.durum in ('onaylandi', 'onay_isleniyor'):
+                return jsonify(hata='Onaylı fatura salt okunurdur.'), 409
+
+@app.route('/health')
+def health():
+    db.session.execute(text('SELECT 1'))
+    return jsonify(status='ok', application='genmar-fatura-onay-pro', version=APP_VERSION)
+
 # Uygulama başlarken DB oluştur
 with app.app_context():
     os.makedirs('database', exist_ok=True)
@@ -1759,7 +1734,7 @@ with app.app_context():
         seed_data()
         standart_alt_kirilimlari_ekle()
     except Exception as e:
-        print(f"Startup hatasi (devam ediyor): {e}")
+        raise RuntimeError('Pro veritabanı başlatılamadı') from e
 
 if __name__ == '__main__':
-    app.run(debug=True, host='0.0.0.0', port=5000)
+    app.run(debug=False, host='127.0.0.1', port=5082)

@@ -574,7 +574,7 @@
 function toast(mesaj, tip = 'success') {
     const el = document.createElement('div');
     el.className = `toast ${tip}`;
-    el.innerHTML = `<span>${tip === 'success' ? '✓' : '✗'}</span> ${mesaj}`;
+    el.textContent = (tip === 'success' ? '✓ ' : '✗ ') + mesaj;
     document.getElementById('toastContainer').appendChild(el);
     setTimeout(() => el.remove(), 3000);
 }
