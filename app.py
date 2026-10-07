@@ -27,7 +27,7 @@ app = Flask(__name__)
 if os.environ.get('RAILWAY_ENVIRONMENT_ID'):
     from werkzeug.middleware.proxy_fix import ProxyFix
     app.wsgi_app = ProxyFix(app.wsgi_app, x_proto=1, x_host=1)
-APP_VERSION = 'V0.2 – TEST • Pro 2026.09.20'
+APP_VERSION = 'V0.3 – TEST • Pro 2026.10.08'
 
 app.config['JSON_AS_ASCII'] = False
 app.json.ensure_ascii = False
@@ -327,6 +327,12 @@ class Departman(db.Model):
     kod = db.Column(db.String(10), unique=True, nullable=False)
     ad = db.Column(db.String(50), nullable=False)
 
+kullanici_departman_yetki = db.Table(
+    'kullanici_departman_yetki',
+    db.Column('kullanici_id', db.Integer, db.ForeignKey('kullanici.id', ondelete='CASCADE'), primary_key=True),
+    db.Column('departman_id', db.Integer, db.ForeignKey('departman.id', ondelete='CASCADE'), primary_key=True),
+)
+
 class Kullanici(db.Model):
     id = db.Column(db.Integer, primary_key=True)
     ad_soyad = db.Column(db.String(100), nullable=False)
@@ -335,6 +341,9 @@ class Kullanici(db.Model):
     sifre_hash = db.Column(db.String(200), default=None)
     departman_id = db.Column(db.Integer, db.ForeignKey('departman.id'))
     departman = db.relationship('Departman', backref='kullanicilar')
+    yetkili_departmanlar = db.relationship(
+        'Departman', secondary=kullanici_departman_yetki,
+        backref=db.backref('yetkili_kullanicilar', lazy='dynamic'))
     @property
     def kisaltma(self):
         p = self.ad_soyad.strip().split()
@@ -667,19 +676,33 @@ def aktif_kullanici():
 def mim_fatura_silme_yetkisi():
     kullanici = aktif_kullanici()
     return bool(
-        kullanici and kullanici.departman
-        and metin_degeri(kullanici.departman.kod).casefold() == 'mim'
+        yonetici_mi() or (
+            kullanici and kullanici.departman
+            and metin_degeri(kullanici.departman.kod).casefold() == 'mim'
+        )
     )
 
 def yonetici_mi():
     kullanici = aktif_kullanici()
     return bool(kullanici and kullanici.ad_soyad.strip().casefold() == 'dilek kaya')
 
+def yetkili_departman_idleri(kullanici=None):
+    kullanici = kullanici or aktif_kullanici()
+    if not kullanici:
+        return set()
+    ids = {d.id for d in kullanici.yetkili_departmanlar}
+    if kullanici.departman_id:
+        ids.add(kullanici.departman_id)
+    return ids
+
 def fatura_gorulebilir_mi(fatura):
     """Özel kullanıcıya atanan faturayı yalnızca o kullanıcı ve yönetici görür."""
-    if yonetici_mi() or not fatura.atanan:
+    if yonetici_mi():
         return True
-    if not fatura.atanan.atanan_faturalari_gizle:
+    kullanici = aktif_kullanici()
+    if fatura.departman_id and fatura.departman_id not in yetkili_departman_idleri(kullanici):
+        return False
+    if not fatura.atanan or not fatura.atanan.atanan_faturalari_gizle:
         return True
     return fatura.atanan_id == session.get('kullanici_id')
 
@@ -695,11 +718,17 @@ def gorulebilir_fatura_sorgusu(sorgu=None):
     if yonetici_mi():
         return sorgu
     kid = session.get('kullanici_id')
-    return sorgu.filter(db.or_(
+    departmanlar = yetkili_departman_idleri()
+    gizlilik = db.or_(
         Fatura.atanan_id.is_(None),
         Fatura.atanan_id == kid,
         ~Fatura.atanan.has(Kullanici.atanan_faturalari_gizle.is_(True)),
-    ))
+    )
+    if departmanlar:
+        return sorgu.filter(
+            db.or_(Fatura.departman_id.is_(None), Fatura.departman_id.in_(departmanlar)),
+            gizlilik)
+    return sorgu.filter(Fatura.departman_id.is_(None), gizlilik)
 
 def supabase_dosya_yolu(public_url):
     """Supabase public URL'den dosya yolunu çıkar."""
@@ -864,7 +893,8 @@ def gelen_faturalar():
         ana_projeler=ana_projeler, aktif_durum=durum,
         durum_sayilari=durum_sayilari, filtre=filtre,
         bana_count=bana_count,
-        oturum_kullanici=aktif_kullanici()
+        oturum_kullanici=aktif_kullanici(),
+        fatura_silebilir=mim_fatura_silme_yetkisi()
     )
 
 # ─── FATURA API ─────────────────────────────────────────────────────────────
@@ -1024,10 +1054,11 @@ def fatura_detay(fatura_id):
         'firma_adi': f.firma_adi or '', 'fatura_tarihi': f.fatura_tarihi or '',
         'tutar': f.tutar if f.tutar is not None else '', 'not_alani': f.not_alani or '',
         'odeme_notu': f.odeme_notu or '',
-        'satirlar': [{'sira': s.sira, 'aciklama': s.aciklama,
+        'satirlar': [{'id': s.id, 'sira': s.sira, 'aciklama': s.aciklama,
             'miktar': str(s.miktar) if s.miktar is not None else '', 'birim': s.birim or '',
             'birim_fiyat': str(s.birim_fiyat) if s.birim_fiyat is not None else '',
-            'satir_tutar': str(s.satir_tutar) if s.satir_tutar is not None else ''} for s in f.satirlar],
+            'satir_tutar': str(s.satir_tutar) if s.satir_tutar is not None else '',
+            'not_alani': s.not_alani or ''} for s in f.satirlar],
         'durum': f.durum, 'vkn': f.vkn or '', 'para_birimi': f.para_birimi,
         'kdv': str(f.kdv) if f.kdv is not None else '', 'kaynak': f.kaynak,
         'uyarilar': json.loads(f.okuma_json or '{}').get('warnings', []),
@@ -1050,15 +1081,41 @@ def fatura_bilgi_guncelle(fatura_id):
     db.session.commit()
     return jsonify({'basarili': True})
 
+@app.route('/api/fatura/<int:fatura_id>/satir/<int:satir_id>/not', methods=['PATCH'])
+@login_gerekli
+def fatura_satir_notu_guncelle(fatura_id, satir_id):
+    fatura = gorulebilir_fatura_veya_404(fatura_id)
+    if fatura.durum in ('onaylandi', 'onay_isleniyor'):
+        return jsonify({'hata': 'Onaylı fatura salt okunurdur.'}), 409
+    satir = FaturaSatir.query.filter_by(id=satir_id, fatura_id=fatura.id).first_or_404()
+    not_alani = metin_degeri((request.get_json(silent=True) or {}).get('not_alani', ''))
+    if len(not_alani) > 1000:
+        return jsonify({'hata': 'Satır notu en fazla 1000 karakter olabilir.'}), 400
+    satir.not_alani = not_alani or None
+    db.session.commit()
+    return jsonify({'basarili': True, 'not_alani': satir.not_alani or ''})
+
 @app.route('/api/fatura/<int:fatura_id>', methods=['DELETE'])
 @login_gerekli
 def fatura_sil(fatura_id):
     if not mim_fatura_silme_yetkisi():
-        return jsonify({'hata': 'Fatura silme yetkisi yalnızca MIM departmanına aittir.'}), 403
+        return jsonify({'hata': 'Fatura silme yetkiniz yok.'}), 403
 
     fatura = gorulebilir_fatura_veya_404(fatura_id)
+    belge_anahtarlari = {fatura.dosya_adi, fatura.orijinal_pdf}
+    try:
+        belge_anahtarlari.update(x.get('key') for x in json.loads(fatura.kaynak_belgeler or '[]')
+                                 if isinstance(x, dict))
+    except (TypeError, ValueError, json.JSONDecodeError):
+        pass
     db.session.delete(fatura)
     db.session.commit()
+    for anahtar in belge_anahtarlari:
+        if anahtar:
+            try:
+                store.delete(anahtar)
+            except Exception:
+                app.logger.warning('Silinen faturanın belge dosyası kaldırılamadı: %s', anahtar)
     return jsonify({'basarili': True})
 
 @app.route('/api/fatura/<int:fatura_id>/damgala', methods=['POST'])
@@ -1280,8 +1337,7 @@ def fatura_goruntule(fatura_id):
 @login_gerekli
 def muhasebe_panel():
     faturalar = (gorulebilir_fatura_sorgusu()
-                 .filter_by(durum='onaylandi')
-                 .order_by(Fatura.onay_tarihi.desc()).all())
+                 .order_by(Fatura.yuklenme_tarihi.desc()).all())
     return render_template('muhasebe.html', faturalar=faturalar, now=datetime.utcnow(),
                            oturum_kullanici=aktif_kullanici())
 
@@ -1328,7 +1384,10 @@ def api_kullanicilar():
                      'gizlilik_duzenlenebilir': yonetici_mi(),
                      'departman_id':k.departman_id,
                      'departman_kod':k.departman.kod if k.departman else None,
-                     'departman_ad':k.departman.ad if k.departman else None}
+                     'departman_ad':k.departman.ad if k.departman else None,
+                     'yetkili_departman_idleri':sorted(d.id for d in k.yetkili_departmanlar),
+                     'yetkili_departmanlar':[{'id':d.id,'kod':d.kod,'ad':d.ad}
+                                             for d in sorted(k.yetkili_departmanlar, key=lambda x: x.kod)]}
                     for k in Kullanici.query.order_by(Kullanici.ad_soyad).all()])
 
 @app.route('/api/yonetim/kullanici-ekle', methods=['POST'])
@@ -1351,6 +1410,8 @@ def api_kullanici_ekle():
         return jsonify({'hata':'Bu e-posta adresi başka bir kullanıcıda kayıtlı'}), 400
     k = Kullanici(ad_soyad=ad, email=email or None,
                   departman_id=d.get('departman_id') or None)
+    yetki_idleri = {int(x) for x in (d.get('yetkili_departman_idleri') or []) if str(x).isdigit()}
+    k.yetkili_departmanlar = Departman.query.filter(Departman.id.in_(yetki_idleri)).all() if yetki_idleri else []
     db.session.add(k); db.session.commit()
     return jsonify({'basarili':True,'id':k.id})
 
@@ -1380,6 +1441,9 @@ def api_kullanici_guncelle(kid):
         return jsonify({'hata':'Bu e-posta adresi başka bir kullanıcıda kayıtlı'}), 400
     k.email = email or None
     k.departman_id = d.get('departman_id') or None
+    if 'yetkili_departman_idleri' in d:
+        yetki_idleri = {int(x) for x in (d.get('yetkili_departman_idleri') or []) if str(x).isdigit()}
+        k.yetkili_departmanlar = Departman.query.filter(Departman.id.in_(yetki_idleri)).all() if yetki_idleri else []
     if yonetici_mi() and 'atanan_faturalari_gizle' in d:
         k.atanan_faturalari_gizle = bool(d.get('atanan_faturalari_gizle'))
     db.session.commit()
@@ -1703,6 +1767,10 @@ with app.app_context():
             db.session.execute(text(
                 'ALTER TABLE fatura ADD COLUMN atama_tamamlandi BOOLEAN NOT NULL DEFAULT FALSE'
             ))
+            db.session.commit()
+        satir_kolonlari = {c['name'] for c in inspect(db.engine).get_columns('fatura_satir')}
+        if 'not_alani' not in satir_kolonlari:
+            db.session.execute(text('ALTER TABLE fatura_satir ADD COLUMN not_alani TEXT'))
             db.session.commit()
         seed_data()
         standart_alt_kirilimlari_ekle()

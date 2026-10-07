@@ -108,9 +108,9 @@
 <!-- İSTATİSTİKLER -->
 <div class="stat-grid">
     <div class="stat-kart">
-        <div class="stat-label">Onaylı Fatura</div>
+        <div class="stat-label">Eklenen Fatura</div>
         <div class="stat-deger">{{ faturalar|length }}</div>
-        <div class="stat-alt">toplam</div>
+        <div class="stat-alt">tüm durumlar</div>
     </div>
     <div class="stat-kart">
         <div class="stat-label">Toplam Tutar</div>
@@ -154,6 +154,7 @@
                 <th>Fatura No</th>
                 <th>Tarih</th>
                 <th>Firma</th>
+                <th>Durum</th>
                 <th>Tutar</th>
                 <th>Ana Proje</th>
                 <th>Alt Proje</th>
@@ -173,6 +174,11 @@
                 <td>{{ f.fatura_tarihi or '—' }}</td>
                 <td style="max-width:160px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">
                     {{ f.firma_adi or '—' }}
+                </td>
+                <td>
+                    <span class="durum {{ f.durum }}" style="font-size:11px">
+                        {{ {'bekliyor':'Bekliyor','onaylandi':'Onaylandı','reddedildi':'Reddedildi','eksik_bilgi':'Eksik Bilgi','onay_isleniyor':'İşleniyor'}.get(f.durum, f.durum) }}
+                    </span>
                 </td>
                 <td class="mono">
                     {% if f.tutar %}
@@ -209,7 +215,7 @@
                     {{ f.onay_tarihi.strftime('%d.%m.%y') if f.onay_tarihi else '—' }}
                 </td>
                 <td>
-                    <a href="/uploads/{{ f.dosya_adi }}" target="_blank" class="btn btn-ghost btn-sm">📄</a>
+                    <a href="{{ url_for('fatura_pdf', fatura_id=f.id) }}" target="_blank" class="btn btn-ghost btn-sm">📄</a>
                 </td>
             </tr>
             {% endfor %}

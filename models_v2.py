@@ -58,5 +58,6 @@ def register_models(db):
         birim = db.Column(db.String(20))
         birim_fiyat = db.Column(db.Numeric(20, 6))
         satir_tutar = db.Column(db.Numeric(20, 6))
+        not_alani = db.Column(db.Text)
 
     return Fatura, FaturaSatir
