@@ -1,4 +1,5 @@
-from invoice_xml import read_ubl_invoice, approval_description
+from invoice_reader import read_invoice, approval_description
+from models_v2 import register_models, upsert_invoice_data
 from flask import Flask, render_template, request, jsonify, send_from_directory, redirect, url_for, session, flash, Response, abort
 from reportlab.pdfgen import canvas as rl_canvas
 from reportlab.pdfbase import pdfmetrics
@@ -440,6 +441,24 @@ class Fatura(db.Model):
     ana_proje = db.relationship('AnaProje')
     alt_proje = db.relationship('AltProje')
     proje_satirlari = db.relationship('FaturaProje', backref='fatura', cascade='all, delete-orphan')
+
+
+InvoiceDetail, InvoiceLine = register_models(db)
+
+
+def sync_invoice_header(fatura):
+    """Keep manually edited legacy header fields in the normalized snapshot."""
+    detail = InvoiceDetail.query.filter_by(fatura_id=fatura.id).first()
+    if detail is None:
+        detail = InvoiceDetail(fatura_id=fatura.id)
+        db.session.add(detail)
+    detail.invoice_number = fatura.fatura_no
+    detail.issue_date = fatura.fatura_tarihi
+    detail.supplier_name = fatura.firma_adi
+    detail.currency = fatura.para_birimi or 'TRY'
+    detail.payable_total = fatura.tutar
+    detail.source = fatura.kaynak or detail.source or 'manual'
+    return detail
 
 # ─── YARDIMCI ───────────────────────────────────────────────────────────────
 
@@ -939,7 +958,7 @@ def upload_fatura():
         if dosya.filename.lower().endswith('.xml'):
             try:
                 xml_verileri.append((os.path.splitext(secure_filename(dosya.filename))[0].casefold(),
-                                     read_ubl_invoice(dosya.read())))
+                                     read_invoice(xml_bytes=dosya.read())))
             except Exception as e:
                 return jsonify({'hata': f'XML okunamadı ({dosya.filename}): {e}'}), 400
 
@@ -982,6 +1001,7 @@ def upload_fatura():
                        or (fno and kayit.fatura_no == fno)), None)
         aciklama = approval_description(xml) if xml else ''
         if mevcut:
+            fatura_kaydi = mevcut
             mevcut.dosya_adi = goreli_yol
             if mevcut.durum == 'bekliyor':
                 mevcut.atama_tamamlandi = False
@@ -995,12 +1015,31 @@ def upload_fatura():
             if not_kullanicisi:
                 mevcut.atanan_id = not_kullanicisi.id
         else:
-            db.session.add(Fatura(dosya_adi=goreli_yol, kaynak='xml+pdf' if xml else 'upload',
-                                  fatura_no=fno or None, firma_adi=firma or None,
-                                  fatura_tarihi=pdf_tarihi, tutar=pdf_tutari,
-                                  para_birimi=(xml.get('para_birimi') if xml else 'TRY') or 'TRY',
-                                  not_alani=aciklama or None,
-                                  atanan_id=not_kullanicisi.id if not_kullanicisi else None))
+            fatura_kaydi = Fatura(
+                dosya_adi=goreli_yol, kaynak='xml+pdf' if xml else 'upload',
+                fatura_no=fno or None, firma_adi=firma or None,
+                fatura_tarihi=pdf_tarihi, tutar=pdf_tutari,
+                para_birimi=(xml.get('para_birimi') if xml else 'TRY') or 'TRY',
+                not_alani=aciklama or None,
+                atanan_id=not_kullanicisi.id if not_kullanicisi else None,
+            )
+            db.session.add(fatura_kaydi)
+
+        # XML başlık ve satırları PDF'den bağımsız, normalize tablolarda tutulur.
+        # PDF-only yüklemelerde de başlık snapshot'ı saklanır; sonradan aynı
+        # faturanın XML'i geldiğinde bu kayıt ve satırları güncellenir.
+        db.session.flush()
+        invoice_data = dict(xml or {})
+        invoice_data.update({
+            'fatura_no': fno or invoice_data.get('fatura_no'),
+            'firma_adi': firma or invoice_data.get('firma_adi'),
+            'fatura_tarihi': pdf_tarihi or invoice_data.get('fatura_tarihi'),
+            'tutar': pdf_tutari if pdf_tutari is not None else invoice_data.get('tutar'),
+            'toplam': invoice_data.get('toplam', pdf_tutari),
+            'para_birimi': invoice_data.get('para_birimi') or 'TRY',
+            'kaynak': 'xml' if xml else 'pdf',
+        })
+        upsert_invoice_data(db, InvoiceDetail, InvoiceLine, fatura_kaydi.id, invoice_data)
         yuklenenler.append(dosya_adi)
 
     db.session.commit()
@@ -1096,6 +1135,7 @@ def network_tara():
 @login_gerekli
 def fatura_detay(fatura_id):
     f = gorulebilir_fatura_veya_404(fatura_id)
+    invoice_detail = InvoiceDetail.query.filter_by(fatura_id=f.id).first()
     projeler = [{'ana_proje_id': p.ana_proje_id, 'alt_proje_id': p.alt_proje_id,
                  'ana_kod': p.ana_proje.kod if p.ana_proje else '',
                  'ana_ad': p.ana_proje.ad if p.ana_proje else '',
@@ -1111,6 +1151,20 @@ def fatura_detay(fatura_id):
         'projeler': projeler,
         'onaylayan_id': f.onaylayan_id, 'atanan_id': f.atanan_id,
         'pdf_url': pdf_url,
+        'vkn_tckn': invoice_detail.supplier_tax_id if invoice_detail else '',
+        'para_birimi': (invoice_detail.currency if invoice_detail else f.para_birimi) or 'TRY',
+        'kdv': invoice_detail.tax_total if invoice_detail else None,
+        'satirlar': [{
+            'sira': line.position,
+            'satir_no': line.line_no or '',
+            'aciklama': line.description or '',
+            'miktar': line.quantity,
+            'birim': line.unit_code or '',
+            'birim_fiyat': line.unit_price,
+            'satir_toplami': line.line_extension_amount,
+            'kdv': line.tax_amount,
+            'para_birimi': line.currency or '',
+        } for line in (invoice_detail.lines if invoice_detail else [])],
     })
 
 @app.route('/api/fatura/<int:fatura_id>/bilgi', methods=['POST'])
@@ -1122,6 +1176,7 @@ def fatura_bilgi_guncelle(fatura_id):
     f.firma_adi = metin_degeri(d.get('firma_adi', f.firma_adi))
     f.fatura_tarihi = d.get('fatura_tarihi', f.fatura_tarihi)
     f.tutar = d.get('tutar', f.tutar)
+    sync_invoice_header(f)
     db.session.commit()
     return jsonify({'basarili': True})
 
@@ -1132,6 +1187,9 @@ def fatura_sil(fatura_id):
         return jsonify({'hata': 'Fatura silme yetkisi yalnızca MIM departmanına aittir.'}), 403
 
     fatura = gorulebilir_fatura_veya_404(fatura_id)
+    detail = InvoiceDetail.query.filter_by(fatura_id=fatura.id).first()
+    if detail:
+        db.session.delete(detail)
     db.session.delete(fatura)
     db.session.commit()
     return jsonify({'basarili': True})
@@ -1183,6 +1241,7 @@ def fatura_onayla(fatura_id):
     fatura.departman_id = data.get('departman_id') or session.get('departman_id')
     fatura.durum = data.get('durum', 'onaylandi')
     fatura.onay_tarihi = datetime.utcnow()
+    sync_invoice_header(fatura)
     db.session.commit()
 
     # PDF değiştirilmez. Onay notu, onaylayan ve tarih veritabanında saklanır.

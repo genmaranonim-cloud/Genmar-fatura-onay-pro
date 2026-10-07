@@ -623,6 +623,7 @@
 {% endblock %}
 
 {% block extra_js %}
+<script src="{{ url_for('static', filename='approval_flow.js') }}"></script>
 <script>
 let faturalar = {{ faturalar | map(attribute='id') | list | tojson }};
 const dosyaAdlari = {{ faturalar | map(attribute='dosya_adi') | list | tojson }};
@@ -948,10 +949,18 @@ function kapat() {
 }
 
 function oncekiFatura() {
-    if(aktifIndex>0){aktifIndex--;faturaAc(faturalar[aktifIndex],dosyaAdlari[aktifIndex]);}
+    aktifIndex = GenmarApprovalFlow.previous({
+        items: faturalar,
+        index: aktifIndex,
+        open: (id, index) => faturaAc(id, dosyaAdlari[index]),
+    });
 }
 function sonrakiFatura() {
-    if(aktifIndex<faturalar.length-1){aktifIndex++;faturaAc(faturalar[aktifIndex],dosyaAdlari[aktifIndex]);}
+    aktifIndex = GenmarApprovalFlow.next({
+        items: faturalar,
+        index: aktifIndex,
+        open: (id, index) => faturaAc(id, dosyaAdlari[index]),
+    });
 }
 
 document.getElementById('onayModal').addEventListener('click',function(e){if(e.target===this)kapat();});
@@ -990,6 +999,7 @@ async function onayla(durum) {
     if(res.basarili) {
         const etiket={onaylandi:'Onaylandı ✓',reddedildi:'Reddedildi ✗',eksik_bilgi:'Eksik Bilgi !'};
         toast(durum === 'onaylandi' ? 'Onay notu, onaylayan ve tarih kaydedildi. Sonraki faturaya geçmek için → kullanın.' : (etiket[durum]||'Kaydedildi'),'success');
+        GenmarApprovalFlow.afterApproval();
         // Onaydan sonra aynı faturada kal. Kullanıcı açıkça yön tuşuna
         // veya Sonraki düğmesine basmadan başka faturaya geçme.;
     }

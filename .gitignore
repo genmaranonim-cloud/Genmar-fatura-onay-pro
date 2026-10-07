@@ -1,0 +1,7 @@
+__pycache__/
+*.py[cod]
+.test-deps*/
+.pytest_cache/
+database/
+static/uploads/
+.env
