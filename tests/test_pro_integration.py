@@ -266,3 +266,25 @@ def test_reader_ignores_line_tax_when_header_tax_missing():
     raw = xml().replace(b'<a:TaxTotal><c:TaxAmount>60.30</c:TaxAmount></a:TaxTotal>',b'')
     raw = raw.replace(b'<a:InvoiceLine>',b'<a:InvoiceLine><a:TaxTotal><c:TaxAmount>40.20</c:TaxAmount></a:TaxTotal>',1)
     assert read_xml(raw).tax_total is None
+
+
+def test_changed_deployment_password_resets_existing_admin_only_once(module, monkeypatch):
+    monkeypatch.setenv('PRO_ADMIN_PASSWORD', 'New-deployment-password-731!')
+    with module.app.app_context():
+        module.seed_data()
+
+    client = module.app.test_client()
+    assert client.post('/login', data={
+        'ad_soyad': 'Dilek Kaya', 'sifre': 'New-deployment-password-731!'
+    }).status_code == 302
+
+    with module.app.app_context():
+        admin = module.Kullanici.query.filter_by(ad_soyad='Dilek Kaya').first()
+        admin.sifre_ayarla('Changed-in-the-app-842!')
+        module.db.session.commit()
+        module.seed_data()
+
+    fresh_client = module.app.test_client()
+    assert fresh_client.post('/login', data={
+        'ad_soyad': 'Dilek Kaya', 'sifre': 'Changed-in-the-app-842!'
+    }).status_code == 302
