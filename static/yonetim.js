@@ -30,14 +30,14 @@ function renderKullanicilar(liste) {
       <div class="liste-item">
         <div class="avatar">${kisaltma(k.ad_soyad)}</div>
         <div class="item-info"><div class="item-ad">${guvenliMetin(k.ad_soyad)}</div>
-        <div class="item-alt">${guvenliMetin(k.departman_ad || '—')}${k.email ? ' · '+guvenliMetin(k.email) : ''}${k.atanan_faturalari_gizle ? ' · 🔒 Özel faturalar' : ''}</div></div>
+        <div class="item-alt">${guvenliMetin(k.departman_ad || '—')}${k.email ? ' · '+guvenliMetin(k.email) : ''}${k.yetkili_departmanlar?.length ? ' · Yetki: '+k.yetkili_departmanlar.map(d=>guvenliMetin(d.kod)).join(', ') : ''}${k.atanan_faturalari_gizle ? ' · 🔒 Özel faturalar' : ''}</div></div>
         <span class="dept-badge">${guvenliMetin(k.departman_kod || '?')}</span>
         <div class="item-actions"><button class="btn btn-ghost btn-sm kul-duzenle" data-id="${k.id}">✎</button>
         <button class="btn btn-red btn-sm kul-sil" data-id="${k.id}" data-ad="${guvenliMetin(k.ad_soyad)}">✕</button></div>
       </div>`).join('');
     el.querySelectorAll('.kul-duzenle').forEach(b => b.onclick = () => {
         const k = liste.find(x => x.id === Number(b.dataset.id));
-        kullaniciDuzenle(k.id, k.ad_soyad, k.departman_id, k.email, k.atanan_faturalari_gizle, k.gizlilik_duzenlenebilir);
+        kullaniciDuzenle(k.id, k.ad_soyad, k.departman_id, k.email, k.atanan_faturalari_gizle, k.gizlilik_duzenlenebilir, k.yetkili_departman_idleri || []);
     });
     el.querySelectorAll('.kul-sil').forEach(b => b.onclick = () => kullaniciSil(Number(b.dataset.id), b.dataset.ad));
 }
@@ -55,12 +55,15 @@ async function kullaniciEkle() {
     if(r.basarili){ toast('Kullanıcı eklendi','success'); document.getElementById('yeniKullaniciAd').value=''; document.getElementById('yeniKullaniciEmail').value=''; veriYukle(); }
     else toast(r.hata||'Hata','error');
 }
-function kullaniciDuzenle(id,ad,deptId,email,gizliAtama,gizlilikDuzenlenebilir){
+function kullaniciDuzenle(id,ad,deptId,email,gizliAtama,gizlilikDuzenlenebilir,yetkiliDeptler){
     document.getElementById('duzenleKulId').value=id; document.getElementById('duzenleKulAd').value=ad;
     document.getElementById('duzenleKulEmail').value=email||'';
     document.getElementById('duzenleKulGizliAtama').checked=Boolean(gizliAtama);
     document.getElementById('gizliAtamaAlani').style.display=gizlilikDuzenlenebilir?'flex':'none';
-    apiFetch('/api/yonetim/departmanlar').then(l=>{ document.getElementById('duzenleKulDept').innerHTML='<option value="">Seçiniz...</option>'+l.map(d=>`<option value="${d.id}" ${d.id==deptId?'selected':''}>${guvenliMetin(d.kod)} — ${guvenliMetin(d.ad)}</option>`).join(''); });
+    apiFetch('/api/yonetim/departmanlar').then(l=>{
+        document.getElementById('duzenleKulDept').innerHTML='<option value="">Seçiniz...</option>'+l.map(d=>`<option value="${d.id}" ${d.id==deptId?'selected':''}>${guvenliMetin(d.kod)} — ${guvenliMetin(d.ad)}</option>`).join('');
+        document.getElementById('duzenleKulYetkiliDeptler').innerHTML=l.map(d=>`<label style="display:flex;gap:6px;align-items:center;font-size:12px"><input type="checkbox" class="yetkili-dept" value="${d.id}" ${yetkiliDeptler.includes(d.id)?'checked':''}> ${guvenliMetin(d.kod)}</label>`).join('');
+    });
     document.getElementById('kulDuzenleModal').classList.add('open');
 }
 function kulDuzenleKapat(){ document.getElementById('kulDuzenleModal').classList.remove('open'); }
@@ -68,7 +71,8 @@ async function kullaniciGuncelle(){
     const id=document.getElementById('duzenleKulId').value, ad=document.getElementById('duzenleKulAd').value.trim();
     const email=document.getElementById('duzenleKulEmail').value.trim(), departman_id=document.getElementById('duzenleKulDept').value||null;
     const atanan_faturalari_gizle=document.getElementById('duzenleKulGizliAtama').checked;
-    const r=await apiFetch(`/api/yonetim/kullanici-guncelle/${id}`,'POST',{ad_soyad:ad,email,departman_id,atanan_faturalari_gizle});
+    const yetkili_departman_idleri=[...document.querySelectorAll('.yetkili-dept:checked')].map(x=>Number(x.value));
+    const r=await apiFetch(`/api/yonetim/kullanici-guncelle/${id}`,'POST',{ad_soyad:ad,email,departman_id,atanan_faturalari_gizle,yetkili_departman_idleri});
     if(r.basarili){toast('Güncellendi','success');kulDuzenleKapat();veriYukle();}else toast(r.hata||'Hata','error');
 }
 async function kullaniciSil(id,ad){ if(confirm(`"${ad}" silinsin mi?`)){const r=await apiFetch(`/api/yonetim/kullanici-sil/${id}`,'DELETE');if(r.basarili)veriYukle();else toast(r.hata||'Hata','error');} }

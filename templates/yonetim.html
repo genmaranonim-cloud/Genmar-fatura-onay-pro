@@ -379,6 +379,11 @@
                     <option value="">Seçiniz...</option>
                 </select>
             </div>
+            <div class="form-group">
+                <label class="form-label">Görmeye Yetkili Olduğu Departmanlar</label>
+                <div id="duzenleKulYetkiliDeptler" style="display:grid;grid-template-columns:1fr 1fr;gap:7px;padding:10px;border:1px solid var(--border);border-radius:8px;max-height:170px;overflow:auto"></div>
+                <small style="color:var(--text2)">Kendi departmanı ayrıca otomatik olarak yetkilidir.</small>
+            </div>
             <label id="gizliAtamaAlani" style="display:none;align-items:flex-start;gap:10px;padding:12px;border:1px solid var(--border);border-radius:8px;cursor:pointer;">
                 <input type="checkbox" id="duzenleKulGizliAtama" style="margin-top:3px;">
                 <span><strong>Atanan faturaları özel tut</strong><br><small style="color:var(--text2)">Bu kullanıcıya atanan faturaları yalnızca kullanıcı ve yönetici görebilir.</small></span>
@@ -1274,5 +1279,5 @@ async function kulExcelYukle(dosya) {
 
 veriYukle();
 </script>
-<script src="{{ url_for('static', filename='yonetim.js') }}?v=20260809-1"></script>
+<script src="{{ url_for('static', filename='yonetim.js') }}?v=20261008-1"></script>
 {% endblock %}

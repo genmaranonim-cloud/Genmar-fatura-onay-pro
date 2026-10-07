@@ -86,6 +86,14 @@
         border-top: 1px solid var(--border);
     }
 
+    .fatura-kart-sil {
+        position:absolute;top:8px;right:8px;z-index:3;
+        width:30px;height:30px;border-radius:8px;border:1px solid rgba(240,79,89,.55);
+        background:rgba(25,25,30,.9);color:var(--red);cursor:pointer;
+    }
+    .fatura-detay-grid { display:grid;grid-template-columns:1fr 1fr;gap:4px 10px;margin-top:9px;font-size:11px;color:var(--text2); }
+    .fatura-detay-grid strong { color:var(--text);font-weight:600; }
+
     .fatura-dosya-adi {
         font-size: 12px;
         font-weight: 600;
@@ -424,6 +432,10 @@
          data-yuklenme="{{ f.yuklenme_tarihi.isoformat() }}"
          data-index="{{ loop.index0 }}"
          data-tarih="{{ f.fatura_tarihi or '' }}">
+        {% if fatura_silebilir %}
+        <button class="fatura-kart-sil" title="Faturayı sil" aria-label="Faturayı sil"
+                onclick="faturaSil({{ f.id }}, event)">🗑</button>
+        {% endif %}
 
         <div class="fatura-thumb">
             <!-- Küçük PDF önizleme - sadece ilk 5 faturaYükle -->
@@ -452,6 +464,12 @@
             <div class="fatura-meta">
                 <span>{{ f.fatura_tarihi or 'Tarih yok' }}</span>
                 <span class="fatura-kaynak">{{ f.kaynak }}</span>
+            </div>
+            <div class="fatura-detay-grid">
+                <span>Tutar</span><strong>{{ '{:,.2f}'.format(f.tutar) if f.tutar is not none else '—' }} {{ f.para_birimi or '' }}</strong>
+                <span>VKN/TCKN</span><strong>{{ f.vkn or '—' }}</strong>
+                <span>KDV</span><strong>{{ '{:,.2f}'.format(f.kdv) if f.kdv is not none else '—' }} {{ f.para_birimi or '' }}</strong>
+                <span>Satır</span><strong>{{ f.satirlar|length }}</strong>
             </div>
         </div>
     </div>
@@ -648,10 +666,12 @@ function guncelleOnaylayanGosterim() {
     if(dp) dp.textContent = oturumBilgi.departman_kod||'';
 }
 
-async function faturaSil() {
-    if(!aktifFaturaId) return;
+async function faturaSil(id=null, event=null) {
+    if(event) event.stopPropagation();
+    const silinecekId = id || aktifFaturaId;
+    if(!silinecekId) return;
     if(!confirm('Bu faturayı kalıcı olarak silmek istediğinize emin misiniz?')) return;
-    const res = await fetch(`/api/fatura/${aktifFaturaId}`, {method:'DELETE'});
+    const res = await fetch(`/api/fatura/${silinecekId}`, {method:'DELETE'});
     const data = await res.json();
     if(data.basarili) {
         toast('Fatura silindi', 'success');
@@ -884,7 +904,11 @@ async function faturaAc(id) {
         const satirlar = d.satirlar || [];
         document.getElementById('faturaSatirlariAlani').style.display = satirlar.length ? 'block' : 'none';
         document.getElementById('faturaSatirlari').innerHTML = satirlar.map(s =>
-            `<div style="padding:6px 0;border-bottom:1px solid var(--border)"><strong>${s.sira}.</strong> ${escapeHtml(s.aciklama)}<br><small>Miktar: ${escapeHtml(s.miktar)} ${escapeHtml(s.birim)} · Birim fiyat: ${escapeHtml(s.birim_fiyat)} · Tutar: ${escapeHtml(s.satir_tutar)}</small></div>`).join('');
+            `<div class="fatura-satiri" style="padding:6px 0;border-bottom:1px solid var(--border)">
+                <div style="display:flex;gap:7px;align-items:flex-start"><div style="flex:1"><strong>${s.sira}.</strong> ${escapeHtml(s.aciklama)}<br><small>Miktar: ${escapeHtml(s.miktar)} ${escapeHtml(s.birim)} · Birim fiyat: ${escapeHtml(s.birim_fiyat)} · Tutar: ${escapeHtml(s.satir_tutar)}</small></div>
+                <button type="button" class="btn btn-ghost btn-sm" title="Satır notu yaz" data-satir-id="${s.id}" data-not="${escapeHtml(s.not_alani)}" onclick="satirNotuDuzenle(this)" ${d.durum === 'onaylandi' ? 'disabled' : ''}>✎</button></div>
+                <div class="satir-notu" style="margin-top:4px;color:var(--accent2);font-size:11px">${s.not_alani ? 'Not: '+escapeHtml(s.not_alani) : ''}</div>
+            </div>`).join('');
         document.getElementById('okumaKontrolu').textContent =
             `Kaynak: ${d.kaynak} · VKN: ${d.vkn || '—'} · KDV: ${d.kdv || '—'} ${aktifParaBirimi}. ` + (d.uyarilar || []).join(' ');
         document.getElementById('onayDurum').textContent = d.durum === 'onaylandi'
@@ -916,6 +940,19 @@ async function faturaAc(id) {
         document.getElementById('onayDurum').textContent = e.message || 'Fatura açılamadı.';
     } finally { detayYukleniyor = false; }
 
+}
+
+async function satirNotuDuzenle(button) {
+    if(!aktifFaturaId || aktifDurum === 'onaylandi') return;
+    const mevcut = button.dataset.not || '';
+    const yeni = prompt('Bu fatura satırı için not:', mevcut);
+    if(yeni === null) return;
+    const res = await apiFetch(`/api/fatura/${aktifFaturaId}/satir/${button.dataset.satirId}/not`, 'PATCH', {not_alani:yeni});
+    if(!res.basarili) return toast(res.hata || 'Satır notu kaydedilemedi', 'error');
+    button.dataset.not = res.not_alani || '';
+    const alan = button.closest('.fatura-satiri').querySelector('.satir-notu');
+    alan.textContent = res.not_alani ? `Not: ${res.not_alani}` : '';
+    toast('Satır notu kaydedildi', 'success');
 }
 
 function faturaBilgiOzetiniGuncelle() {
