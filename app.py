@@ -11,7 +11,7 @@ from sqlalchemy import inspect, text
 from datetime import datetime
 from werkzeug.security import generate_password_hash, check_password_hash
 from werkzeug.utils import secure_filename
-import os, shutil, json, functools, base64, unicodedata, secrets
+import os, shutil, json, functools, base64, unicodedata, secrets, hashlib
 from pathlib import Path
 from decimal import Decimal
 from invoice_reader import bundle_files
@@ -753,15 +753,35 @@ def seed_data():
             AltProje(kod='ULS', ad='Ulaşım', ana_proje_id=genel.id),
             AltProje(kod='PAZ', ad='Pazarlama', ana_proje_id=asa.id),
         ]); db.session.commit()
+    configured_password = os.environ.get('PRO_ADMIN_PASSWORD')
+    password_marker = DATA_DIR / '.admin-password-applied'
     if Kullanici.query.count() == 0:
         muh = Departman.query.filter_by(kod='MUH').first()
         admin = Kullanici(ad_soyad='Dilek Kaya', departman_id=muh.id)
-        initial_password = os.environ.get('PRO_ADMIN_PASSWORD') or secrets.token_urlsafe(20)
+        initial_password = configured_password or secrets.token_urlsafe(20)
         admin.sifre_ayarla(initial_password)
-        if not os.environ.get('PRO_ADMIN_PASSWORD'):
+        if configured_password:
+            password_marker.write_text(
+                hashlib.sha256(configured_password.encode('utf-8')).hexdigest(),
+                encoding='ascii')
+        else:
             (DATA_DIR / '.initial-password').write_text(initial_password, encoding='utf-8')
         db.session.add(admin)
         db.session.commit()
+    elif configured_password:
+        # Apply a changed deployment password exactly once. The marker prevents a
+        # later restart from overwriting a password the user changed in the UI.
+        password_fingerprint = hashlib.sha256(
+            configured_password.encode('utf-8')).hexdigest()
+        applied_fingerprint = (
+            password_marker.read_text(encoding='ascii').strip()
+            if password_marker.exists() else '')
+        if applied_fingerprint != password_fingerprint:
+            admin = Kullanici.query.filter_by(ad_soyad='Dilek Kaya').first()
+            if admin:
+                admin.sifre_ayarla(configured_password)
+                db.session.commit()
+                password_marker.write_text(password_fingerprint, encoding='ascii')
 
 # ─── LOGIN ──────────────────────────────────────────────────────────────────
 
