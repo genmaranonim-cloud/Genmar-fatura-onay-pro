@@ -9,6 +9,7 @@ Bu sürüm, `genmaranonim-cloud/Genmar-fatura-onay-pro` deposunun `b952fc8` test
 - PDF metin katmanı okuyucu. Görüntü olarak taranmış PDF için OCR bulunmaz; kullanıcı eksik bilgileri tamamlar.
 - ETTN/fatura no veya aynı dosya kökü ile PDF/XML/HTML eşleştirme. Çelişkili veya belirsiz toplu yükleme tamamen reddedilir. XML verisi önceliklidir.
 - Orijinal belgeler ve yapılandırılmış satırlar ayrı, kalıcı saklanır. Aynı faturanın yeniden yüklenmesi mevcut kaydın üzerine yazmaz.
+- Kalıcı fatura ve satır modelleri `models_v2.py` içinde; manuel onay gezinmesi `static/approval_flow.js` içinde izole edilmiştir.
 - XML/HTML tek başına yüklenebilir; görüntülemek için açıkça işaretlenmiş türetilmiş kontrol PDF'si üretilir.
 - Onay, `onay_isleniyor → damga/not üret → doğrula → yeni dosyaya yaz → tekrar oku/doğrula → onaylandi` zinciridir. Hata, onay alanlarını ve durumu geri alır.
 - İlk sayfada görünür damga, ek sayfalarda tam onay/ödeme notu ve onay kimliği. Orijinal PDF değişmez.

@@ -607,6 +607,7 @@
 {% endblock %}
 
 {% block extra_js %}
+<script src="{{ url_for('static', filename='approval_flow.js') }}"></script>
 <script>
 let faturalar = {{ faturalar | map(attribute='id') | list | tojson }};
 const dosyaAdlari = {{ faturalar | map(attribute='dosya_adi') | list | tojson }};
@@ -955,12 +956,18 @@ function kapat() {
 }
 
 function oncekiFatura() {
-    if(islemSuruyor || detayYukleniyor) return;
-    if(aktifIndex>0){aktifIndex--;faturaAc(faturalar[aktifIndex],dosyaAdlari[aktifIndex]);}
+    aktifIndex = GenmarApprovalFlow.previous({
+        items: faturalar, index: aktifIndex,
+        blocked: islemSuruyor || detayYukleniyor,
+        open: id => faturaAc(id),
+    });
 }
 function sonrakiFatura() {
-    if(islemSuruyor || detayYukleniyor) return;
-    if(aktifIndex<faturalar.length-1){aktifIndex++;faturaAc(faturalar[aktifIndex],dosyaAdlari[aktifIndex]);}
+    aktifIndex = GenmarApprovalFlow.next({
+        items: faturalar, index: aktifIndex,
+        blocked: islemSuruyor || detayYukleniyor,
+        open: id => faturaAc(id),
+    });
 }
 
 document.getElementById('onayModal').addEventListener('click',function(e){if(e.target===this)kapat();});
@@ -1006,7 +1013,7 @@ async function onayla(durum) {
         const kart = document.querySelector(`.fatura-kart[data-id="${id}"]`);
         if(kart) kart.dataset.durum = durum;
         islemSuruyor = false;
-        await faturaAc(id);
+        await GenmarApprovalFlow.afterApproval({id, open: faturaAc});
         document.getElementById('pdfFrame').src = `/fatura/${id}/goruntule?v=${Date.now()}`;
         toast(durum === 'onaylandi' ? 'Damga ve onay notu doğrulandı. Aynı faturadasınız.' : 'Durum kaydedildi.', 'success');
     } catch(e) {
