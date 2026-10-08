@@ -29,6 +29,7 @@ export class GenmarContainer extends DurableObject {
         enableInternet: true,
         env: {
           PORT: "8080",
+          CLOUDFLARE_APPLICATION_ID: "genmar-fatura-onay-pro",
           PRO_DATA_DIR: "/data/genmar-pro",
           PRO_ADMIN_PASSWORD: this.env.PRO_ADMIN_PASSWORD,
           PRO_SECRET_KEY: this.env.PRO_SECRET_KEY,
