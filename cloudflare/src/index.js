@@ -63,6 +63,6 @@ export class GenmarContainer extends DurableObject {
 
 export default {
   fetch(request, env) {
-    return env.GENMAR_CONTAINER.getByName("genmar-primary").fetch(request);
+    return env.GENMAR_CONTAINER.getByName("genmar-primary-v2").fetch(request);
   },
 };
