@@ -1,0 +1,11 @@
+{
+  "name": "genmar-fatura-onay-pro-cloudflare",
+  "private": true,
+  "scripts": {
+    "cf:check": "wrangler deploy --dry-run",
+    "cf:deploy": "wrangler deploy"
+  },
+  "devDependencies": {
+    "wrangler": "^4.136.0"
+  }
+}

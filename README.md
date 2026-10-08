@@ -41,3 +41,17 @@ Testler yalnızca geçici veritabanları ve yapay faturalar kullanır. Okuyucu, 
 20.09.2026 yerel tarayıcı kontrolünde: fatura penceresi, iki satırlı fatura, damganın görünmesi, onay sonrası aynı fatura, salt okunur alanlar, sağ/sol geçiş ve not alanında ok tuşlarının davranışı kontrol edildi. Güncel test sayısı test çıktısından doğrulanmalıdır.
 
 Bu test sürümünde eski ağ klasörü tarama ve Excel ile mevcut belge üzerine yazma yolları kapalıdır. Eski canlıdaki faturalar, kullanıcılar ve projeler taşınmamıştır. Gerçek tedarikçi dosyalarıyla kabul testi ayrıca yapılmalıdır.
+
+## Cloudflare geçişi
+
+Cloudflare yayını mevcut Flask/PDF davranışını koruyan tek bir Container kullanır.
+Belgeler özel bir R2 bucket'ında saklanır; SQLite veritabanı Litestream ile aynı
+bucket'a sürekli çoğaltılır ve Container yeniden başladığında geri yüklenir.
+Cloudflare yayını için `Dockerfile.cloudflare`, `wrangler.jsonc` ve `cloudflare/`
+dosyaları kullanılır. Railway yayın dosyaları ayrı kalır.
+
+Gerekli Worker secret'ları: `PRO_ADMIN_PASSWORD`, `PRO_SECRET_KEY`,
+`R2_ACCESS_KEY_ID`, `R2_SECRET_ACCESS_KEY`. R2 bucket oluşturulduktan sonra
+`wrangler.jsonc` içindeki `R2_ENDPOINT` gerçek hesap endpoint'i ile değiştirilir.
+Cloudflare Containers, Workers Paid planı gerektirir. Cloudflare canlı doğrulaması
+tamamlanmadan Railway servisi kapatılmaz ve eski uygulamaya dokunulmaz.

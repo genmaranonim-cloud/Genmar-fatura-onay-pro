@@ -16,7 +16,7 @@ from pathlib import Path
 from decimal import Decimal
 from invoice_reader import bundle_files
 from models_v2 import register_models
-from pro_documents import DocumentStore, derived_pdf, make_approval, verify_approval, digest
+from pro_documents import DocumentStore, R2DocumentStore, derived_pdf, make_approval, verify_approval, digest
 import requests as http_requests
 from urllib.parse import quote, unquote, urlparse
 import re
@@ -24,7 +24,7 @@ import openpyxl
 import xlrd
 
 app = Flask(__name__)
-if os.environ.get('RAILWAY_ENVIRONMENT_ID'):
+if os.environ.get('RAILWAY_ENVIRONMENT_ID') or os.environ.get('CLOUDFLARE_APPLICATION_ID'):
     from werkzeug.middleware.proxy_fix import ProxyFix
     app.wsgi_app = ProxyFix(app.wsgi_app, x_proto=1, x_host=1)
 APP_VERSION = 'V0.3 – TEST • Pro 2026.10.08'
@@ -52,20 +52,33 @@ DATA_DIR = Path(os.environ.get('PRO_DATA_DIR', str(Path(BASE_DIR) / 'pro-data'))
 DATA_DIR.mkdir(parents=True, exist_ok=True)
 if os.environ.get('RAILWAY_ENVIRONMENT_ID') and not os.environ.get('RAILWAY_VOLUME_MOUNT_PATH'):
     raise RuntimeError('Pro için ayrı kalıcı disk bağlanmalıdır.')
-secret_file = DATA_DIR / '.session-key'
-if not secret_file.exists():
-    secret_file.write_text(secrets.token_hex(32), encoding='ascii')
-app.config.update(SECRET_KEY=secret_file.read_text().strip(),
+secret_key = os.environ.get('PRO_SECRET_KEY', '').strip()
+if not secret_key:
+    secret_file = DATA_DIR / '.session-key'
+    if not secret_file.exists():
+        secret_file.write_text(secrets.token_hex(32), encoding='ascii')
+    secret_key = secret_file.read_text().strip()
+app.config.update(SECRET_KEY=secret_key,
     SQLALCHEMY_DATABASE_URI='sqlite:///' + str(DATA_DIR / 'genmar-pro.db'),
     SQLALCHEMY_TRACK_MODIFICATIONS=False,
     SQLALCHEMY_ENGINE_OPTIONS={'connect_args': {'timeout': 30}},
     UPLOAD_FOLDER=str(DATA_DIR / 'documents'), MAX_CONTENT_LENGTH=50 * 1024 * 1024,
     SESSION_COOKIE_HTTPONLY=True, SESSION_COOKIE_SAMESITE='Lax',
-    SESSION_COOKIE_SECURE=bool(os.environ.get('RAILWAY_ENVIRONMENT_ID')))
+    SESSION_COOKIE_SECURE=bool(os.environ.get('RAILWAY_ENVIRONMENT_ID') or
+                               os.environ.get('CLOUDFLARE_APPLICATION_ID')))
 SUPABASE_URL = SUPABASE_KEY = SUPABASE_BUCKET = ''
 CLOUDINARY_CLOUD_NAME = CLOUDINARY_API_KEY = CLOUDINARY_API_SECRET = ''
 BULUT_MOD = False
-store = DocumentStore(app.config['UPLOAD_FOLDER'])
+r2_settings = {
+    'endpoint': os.environ.get('R2_ENDPOINT', '').strip(),
+    'access_key_id': os.environ.get('R2_ACCESS_KEY_ID', '').strip(),
+    'secret_access_key': os.environ.get('R2_SECRET_ACCESS_KEY', '').strip(),
+    'bucket': os.environ.get('R2_BUCKET', '').strip(),
+}
+if any(r2_settings.values()) and not all(r2_settings.values()):
+    raise RuntimeError('R2 ayarlarının tamamı tanımlanmalıdır.')
+store = (R2DocumentStore(**r2_settings) if all(r2_settings.values())
+         else DocumentStore(app.config['UPLOAD_FOLDER']))
 
 def supabase_yukle(dosya_bytes, dosya_yolu):
     """Supabase Storage'a dosya yükle, public URL döndür."""

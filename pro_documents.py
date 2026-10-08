@@ -69,6 +69,47 @@ class DocumentStore:
         self.path(key).unlink(missing_ok=True)
 
 
+class R2DocumentStore:
+    """Private document storage backed by Cloudflare R2's S3 API."""
+
+    def __init__(self, endpoint, access_key_id, secret_access_key, bucket, prefix='documents'):
+        import boto3
+
+        self.bucket = bucket
+        self.prefix = prefix.strip('/')
+        self.client = boto3.client(
+            's3', endpoint_url=endpoint, region_name='auto',
+            aws_access_key_id=access_key_id,
+            aws_secret_access_key=secret_access_key,
+        )
+
+    def object_key(self, key):
+        if not re.fullmatch(r'[0-9a-f]{32}(?:\.[A-Za-z0-9]+)?', key or ''):
+            raise ValueError('Geçersiz belge anahtarı')
+        return f'{self.prefix}/{key}' if self.prefix else key
+
+    def put(self, raw, suffix='.pdf'):
+        if not re.fullmatch(r'\.[A-Za-z0-9]{1,10}', suffix or ''):
+            raise ValueError('Geçersiz belge uzantısı')
+        key = uuid4().hex + suffix.lower()
+        self.client.put_object(
+            Bucket=self.bucket,
+            Key=self.object_key(key),
+            Body=raw,
+            ContentType={'.pdf': 'application/pdf', '.xml': 'application/xml',
+                         '.html': 'text/html', '.htm': 'text/html'}.get(
+                             suffix.lower(), 'application/octet-stream'),
+        )
+        return key
+
+    def read(self, key):
+        return self.client.get_object(
+            Bucket=self.bucket, Key=self.object_key(key))['Body'].read()
+
+    def delete(self, key):
+        self.client.delete_object(Bucket=self.bucket, Key=self.object_key(key))
+
+
 def digest(raw):
     return hashlib.sha256(raw).hexdigest()
 

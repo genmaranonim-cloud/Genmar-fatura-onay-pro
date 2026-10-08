@@ -1,0 +1,28 @@
+{
+  "$schema": "./node_modules/wrangler/config-schema.json",
+  "name": "genmar-fatura-onay-pro",
+  "main": "cloudflare/src/index.js",
+  "compatibility_date": "2026-10-08",
+  "observability": { "enabled": true },
+  "containers": [
+    {
+      "class_name": "GenmarContainer",
+      "scheduling_policy": "durable_object",
+      "images": {
+        "app": { "dockerfile": "./Dockerfile.cloudflare" }
+      }
+    }
+  ],
+  "durable_objects": {
+    "bindings": [
+      { "name": "GENMAR_CONTAINER", "class_name": "GenmarContainer" }
+    ]
+  },
+  "exports": {
+    "GenmarContainer": { "type": "durable-object", "storage": "sqlite" }
+  },
+  "vars": {
+    "R2_BUCKET": "genmar-fatura-onay-pro",
+    "R2_ENDPOINT": "SET_AFTER_R2_CREATION"
+  }
+}
