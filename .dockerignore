@@ -1,6 +1,10 @@
 .git
 __pycache__
 .pytest_cache
+.test-deps*
+.cf-test-deps
+node_modules
+.wrangler
 pro-data
 database
 static/uploads

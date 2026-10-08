@@ -10,3 +10,6 @@ pro-data/
 *.db
 .initial-password
 .session-key
+node_modules/
+.wrangler/
+.dev.vars
