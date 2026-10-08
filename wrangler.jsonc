@@ -23,6 +23,6 @@
   },
   "vars": {
     "R2_BUCKET": "genmar-fatura-onay-pro",
-    "R2_ENDPOINT": "SET_AFTER_R2_CREATION"
+    "R2_ENDPOINT": "https://aabe3b6887650372e5e8c2de317f8e21.r2.cloudflarestorage.com"
   }
 }
