@@ -958,6 +958,7 @@ def gelen_faturalar():
     if filtre == 'bana':
         q = q.filter_by(atanan_id=kid)
 
+    q = q.outerjoin(MimArsivKaydi, MimArsivKaydi.fatura_id == Fatura.id).filter(MimArsivKaydi.id.is_(None))
     faturalar = q.order_by(Fatura.yuklenme_tarihi.desc()).all()
     kullanicilar = Kullanici.query.all()
     ana_projeler = AnaProje.query.filter_by(aktif=True).all()
@@ -1002,6 +1003,7 @@ def upload_fatura():
         return jsonify({'hata': 'Görüntüleme için XML ile birlikte PDF de seçilmelidir.'}), 400
 
     yuklenenler = []
+    arsivde_atlanan = 0
     for dosya in pdfler:
         dosya_adi = dosya.filename
         dosya_bytes = dosya.read()
@@ -1018,6 +1020,14 @@ def upload_fatura():
             pdf_tarihi = xml.get('fatura_tarihi') or pdf_tarihi
             pdf_tutari = xml.get('tutar') if xml.get('tutar') is not None else pdf_tutari
 
+        # Arşivli dosyalarda veri ve PDF değişmez.
+        sade_ad = secure_filename(dosya_adi).casefold()
+        eslesen = next((f for f in Fatura.query.all()
+            if secure_filename(os.path.basename(unquote(f.dosya_adi or ''))).casefold() == sade_ad
+            or (fno and f.fatura_no == fno)), None)
+        if eslesen and eslesen.arsiv_kaydi:
+            arsivde_atlanan += 1
+            continue
         simdi = datetime.now()
         if BULUT_MOD:
             depo_dosya_adi = secure_filename(dosya_adi)
@@ -1059,7 +1069,7 @@ def upload_fatura():
 
     db.session.commit()
     return jsonify({'basarili': True, 'yuklenen': len(yuklenenler),
-                    'xml_okunan': len(xml_verileri)})
+                    'xml_okunan': len(xml_verileri), 'arsivde_atlanan': arsivde_atlanan})
 
 @app.route('/api/excel-fatura-bilgileri', methods=['POST'])
 @login_gerekli
@@ -1171,6 +1181,8 @@ def fatura_detay(fatura_id):
 @login_gerekli
 def fatura_bilgi_guncelle(fatura_id):
     f = gorulebilir_fatura_veya_404(fatura_id)
+    if f.arsiv_kaydi:
+        return jsonify({'hata': 'MIM onayıyla arşivlenmiş fatura değiştirilemez.'}), 409
     d = request.json
     f.fatura_no = d.get('fatura_no', f.fatura_no)
     f.firma_adi = metin_degeri(d.get('firma_adi', f.firma_adi))
@@ -1186,6 +1198,8 @@ def fatura_sil(fatura_id):
         return jsonify({'hata': 'Fatura silme yetkisi yalnızca MIM departmanına aittir.'}), 403
 
     fatura = gorulebilir_fatura_veya_404(fatura_id)
+    if fatura.arsiv_kaydi:
+        return jsonify({'hata': 'MIM onayıyla arşivlenmiş fatura değiştirilemez.'}), 409
     db.session.delete(fatura)
     db.session.commit()
     return jsonify({'basarili': True})
@@ -1194,6 +1208,8 @@ def fatura_sil(fatura_id):
 @login_gerekli
 def onayli_faturayi_damgala(fatura_id):
     fatura = gorulebilir_fatura_veya_404(fatura_id)
+    if fatura.arsiv_kaydi:
+        return jsonify({'hata': 'MIM onayıyla arşivlenmiş fatura değiştirilemez.'}), 409
     if fatura.durum != 'onaylandi':
         return jsonify({'hata': 'Yalnızca onaylanmış faturalar damgalanabilir.'}), 400
     try:
@@ -1207,6 +1223,8 @@ def onayli_faturayi_damgala(fatura_id):
 @login_gerekli
 def fatura_onayla(fatura_id):
     fatura = gorulebilir_fatura_veya_404(fatura_id)
+    if fatura.arsiv_kaydi:
+        return jsonify({'hata': 'MIM onayıyla arşivlenmiş fatura değiştirilemez.'}), 409
     data = request.json
 
     # Çoklu proje satırlarını kaydet
@@ -1246,6 +1264,8 @@ def fatura_onayla(fatura_id):
 @login_gerekli
 def fatura_aktar(fatura_id):
     fatura = gorulebilir_fatura_veya_404(fatura_id)
+    if fatura.arsiv_kaydi:
+        return jsonify({'hata': 'MIM onayıyla arşivlenmiş fatura değiştirilemez.'}), 409
     data = request.json
     hedef_id = data.get('hedef_kullanici_id')
     if not hedef_id:
@@ -1388,6 +1408,82 @@ def fatura_goruntule(fatura_id):
                                hata='Fatura görüntülenemedi. Lütfen tekrar deneyin.'), 502
 
 # ─── MUHASEBE ───────────────────────────────────────────────────────────────
+
+
+@app.route('/mim-onay')
+@login_gerekli
+def mim_arsiv_onay_listesi():
+    if not mim_fatura_silme_yetkisi():
+        abort(403)
+    q = gorulebilir_fatura_sorgusu().outerjoin(
+        MimArsivKaydi, MimArsivKaydi.fatura_id == Fatura.id
+    ).filter(Fatura.durum == 'onaylandi', MimArsivKaydi.id.is_(None))
+    return render_template('mim_onay.html',
+                           faturalar=q.order_by(Fatura.onay_tarihi.desc()).limit(250).all(),
+                           toplam=q.count(), oturum_kullanici=aktif_kullanici())
+
+
+@app.route('/api/fatura/<int:fatura_id>/mim-arsiv-onay', methods=['POST'])
+@login_gerekli
+def mim_arsiv_onayla(fatura_id):
+    if not mim_fatura_silme_yetkisi():
+        return jsonify({'hata': 'Bu onay yalnızca MIM departmanına aittir.'}), 403
+    fatura = gorulebilir_fatura_veya_404(fatura_id)
+    if fatura.arsiv_kaydi:
+        return jsonify({'basarili': True, 'zaten_arsivde': True})
+    if fatura.durum != 'onaylandi':
+        return jsonify({'hata': 'Önce normal fatura onayı tamamlanmalıdır.'}), 409
+    yil, ay = arsiv_fatura_donemi(fatura)
+    metin, okundu = arsiv_icerik_metni(fatura)
+    db.session.add(MimArsivKaydi(fatura_id=fatura.id,
+        onaylayan_id=session['kullanici_id'], yil=yil, ay=ay,
+        icerik_metni=metin, metin_okundu=okundu))
+    try:
+        db.session.commit()
+    except Exception:
+        db.session.rollback()
+        app.logger.exception('MIM arşiv kaydı oluşturulamadı')
+        return jsonify({'hata': 'Arşiv kaydı oluşturulamadı.'}), 500
+    return jsonify({'basarili': True, 'yil': yil, 'ay': ay,
+                    'klasor': f'{yil} / {ARSIV_AY_ADLARI[ay]}',
+                    'icerik_aranabilir': okundu})
+
+
+@app.route('/arsiv')
+@login_gerekli
+def arsiv_sayfasi():
+    q_base = gorulebilir_fatura_sorgusu().join(
+        MimArsivKaydi, MimArsivKaydi.fatura_id == Fatura.id)
+    donemler = q_base.with_entities(
+        MimArsivKaydi.yil, MimArsivKaydi.ay, db.func.count(Fatura.id)
+    ).group_by(MimArsivKaydi.yil, MimArsivKaydi.ay).order_by(
+        MimArsivKaydi.yil.desc(), MimArsivKaydi.ay.desc()).all()
+    yil = request.args.get('yil', type=int)
+    ay = request.args.get('ay', type=int)
+    if (yil, ay) not in {(d[0], d[1]) for d in donemler}:
+        yil, ay = (donemler[0][0], donemler[0][1]) if donemler else (None, None)
+    firma = (request.args.get('firma') or '').strip()[:120]
+    icerik = (request.args.get('icerik') or '').strip()[:120]
+    genel = (request.args.get('ara') or '').strip()[:120]
+    q = q_base
+    if yil is not None:
+        q = q.filter(MimArsivKaydi.yil == yil, MimArsivKaydi.ay == ay)
+    if firma:
+        q = q.filter(Fatura.firma_adi.ilike('%' + firma + '%'))
+    if icerik:
+        q = q.filter(MimArsivKaydi.icerik_metni.ilike('%' + icerik + '%'))
+    if genel:
+        kalip = '%' + genel + '%'
+        q = q.filter(db.or_(Fatura.firma_adi.ilike(kalip),
+            Fatura.fatura_no.ilike(kalip), MimArsivKaydi.icerik_metni.ilike(kalip)))
+    sayfa = max(1, request.args.get('sayfa', default=1, type=int) or 1)
+    sayfali = q.order_by(MimArsivKaydi.onay_tarihi.desc()).paginate(
+        page=sayfa, per_page=25, error_out=False)
+    return render_template('arsiv.html', faturalar=sayfali.items,
+        sayfalama=sayfali, donemler=donemler, ay_adlari=ARSIV_AY_ADLARI,
+        secili_yil=yil, secili_ay=ay, firma=firma, icerik=icerik,
+        genel=genel, toplam=q_base.count(), oturum_kullanici=aktif_kullanici())
+
 
 @app.route('/muhasebe')
 @login_gerekli
