@@ -1,0 +1,53 @@
+{% extends "base.html" %}
+{% block title %}MIM Arşiv Onayı{% endblock %}
+{% block topbar %}<div class="topbar"><span class="topbar-title">✓ MIM Arşiv Onayı</span><span style="font-size:12px;color:var(--text2)">Normal onayı tamamlanan faturaların nihai arşiv kontrolü</span><span style="margin-left:auto;color:var(--text2)">{{ toplam }} bekleyen</span></div>{% endblock %}
+{% block content %}
+<div class="page-toolbar">
+ <input class="form-control" id="mimAra" placeholder="Firma veya fatura numarası ara..." style="flex:1;max-width:420px" oninput="mimFiltrele()">
+ <a class="btn btn-ghost btn-sm" href="/arsiv">Arşive Git</a>
+</div>
+<div class="card" style="padding:0;overflow:hidden">
+<div class="table-scroll">
+<table class="compact-table" id="mimTablo">
+<thead><tr><th>Fatura No</th><th>Firma</th><th>Tarih</th><th>Proje</th><th>Tutar</th><th>Onaylayan</th><th>İşlem</th></tr></thead>
+<tbody>
+{% for f in faturalar %}
+<tr data-search="{{ ((f.firma_adi or '') ~ ' ' ~ (f.fatura_no or ''))|lower }}">
+ <td>{{ f.fatura_no or '—' }}</td><td><strong>{{ f.firma_adi or '—' }}</strong></td>
+ <td>{{ f.fatura_tarihi or '—' }}</td>
+ <td>{{ f.ana_proje.kod if f.ana_proje else '—' }}</td>
+ <td style="white-space:nowrap">{{ '%.2f'|format(f.tutar or 0) }} {{ f.para_birimi or 'TRY' }}</td>
+ <td>{{ f.onaylayan.ad_soyad if f.onaylayan else '—' }}</td>
+ <td style="white-space:nowrap">
+ <a href="{{ url_for('fatura_goruntule',fatura_id=f.id) }}" target="_blank" rel="noopener" class="btn btn-ghost btn-sm">PDF Kontrol</a>
+ <button class="btn btn-primary btn-sm" type="button" onclick="mimOnayla({{ f.id }},this)">MIM Onayla / Arşivle</button>
+ </td>
+</tr>
+{% else %}<tr><td colspan="7" style="text-align:center;padding:25px;color:var(--text2)">Arşiv onayı bekleyen fatura yok.</td></tr>{% endfor %}
+</tbody></table></div>
+</div>
+{% endblock %}
+{% block extra_js %}
+<script>
+function mimFiltrele(){
+ const q=document.getElementById('mimAra').value.toLocaleLowerCase('tr-TR');
+ document.querySelectorAll('#mimTablo tbody tr[data-search]').forEach(tr=>{
+  tr.hidden=!tr.dataset.search.toLocaleLowerCase('tr-TR').includes(q);
+ });
+}
+async function mimOnayla(id,button){
+ if(!confirm('PDF kontrol edildi mi? MIM nihai onayı vererek faturayı arşive almak istiyor musunuz?'))return;
+ button.disabled=true;
+ try{
+  const res=await fetch('/api/fatura/'+id+'/mim-arsiv-onay',{
+   method:'POST',credentials:'same-origin',
+   headers:{'Content-Type':'application/json'},body:'{}'
+  });
+  const data=await res.json();
+  if(!res.ok||!data.basarili)throw new Error(data.hata||'Arşivleme hatası');
+  toast('Fatura '+(data.klasor||'')+' klasörüne arşivlendi.','success');
+  button.closest('tr').remove();
+ }catch(e){button.disabled=false;toast(e.message,'error');}
+}
+</script>
+{% endblock %}

@@ -14,7 +14,7 @@
     }
 
     .ozet-tablo th {
-        padding: 10px 14px;
+        padding: 8px 9px;
         text-align: left;
         font-size: 11px;
         text-transform: uppercase;
@@ -74,22 +74,22 @@
     .stat-grid {
         display: grid;
         grid-template-columns: repeat(auto-fit, minmax(160px, 1fr));
-        gap: 14px;
-        margin-bottom: 24px;
+        gap: 8px;
+        margin-bottom: 10px;
     }
 
     .stat-kart {
         background: var(--surface);
         border: 1px solid var(--border);
         border-radius: 10px;
-        padding: 16px;
+        padding: 9px 12px;
     }
 
     .stat-label { font-size: 11px; color: var(--text2); text-transform: uppercase; letter-spacing: 0.8px; margin-bottom: 6px; }
-    .stat-deger { font-size: 24px; font-weight: 700; color: var(--text); }
+    .stat-deger { font-size: 21px; font-weight: 700; color: var(--text); }
     .stat-alt { font-size: 12px; color: var(--text2); margin-top: 4px; }
 
-    .toolbar { display: flex; gap: 10px; margin-bottom: 20px; align-items: center; flex-wrap: wrap; }
+    .toolbar { display: flex; gap: 10px; margin-bottom: 10px; align-items: center; flex-wrap: wrap; }
     .arama { flex: 1; min-width: 200px; }
 </style>
 {% endblock %}
@@ -106,7 +106,7 @@
 {% block content %}
 
 <!-- İSTATİSTİKLER -->
-<div class="stat-grid">
+<div class="stat-grid page-metrics">
     <div class="stat-kart">
         <div class="stat-label">Onaylı Fatura</div>
         <div class="stat-deger">{{ faturalar|length }}</div>
@@ -119,7 +119,7 @@
             {% for f in faturalar %}{% if f.tutar %}{% set toplam.v = toplam.v + f.tutar %}{% endif %}{% endfor %}
             {{ '{:,.0f}'.format(toplam.v) }}
         </div>
-        <div class="stat-alt">TRY</div>
+        <div class="stat-alt">Farklı dövizleri tek para birimi gibi toplamayın</div>
     </div>
     <div class="stat-kart">
         <div class="stat-label">Bugün Onaylanan</div>

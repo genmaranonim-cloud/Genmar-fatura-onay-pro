@@ -7,7 +7,7 @@
     .durum-tabs {
         display: flex;
         gap: 8px;
-        margin-bottom: 20px;
+        margin-bottom: 8px;
         flex-wrap: wrap;
     }
 
@@ -15,7 +15,7 @@
         display: inline-flex;
         align-items: center;
         gap: 8px;
-        padding: 8px 16px;
+        padding: 5px 10px;
         border-radius: 8px;
         text-decoration: none;
         font-size: 13px;
@@ -37,7 +37,7 @@
     .album-grid {
         display: grid;
         grid-template-columns: repeat(auto-fill, minmax(200px, 1fr));
-        gap: 16px;
+        gap: 8px;
     }
 
     .fatura-kart {
@@ -57,7 +57,7 @@
     }
 
     .fatura-thumb {
-        height: 160px;
+        height: 100px;
         background: #111;
         display: flex;
         align-items: center;
@@ -82,7 +82,7 @@
     }
 
     .fatura-kart-body {
-        padding: 12px;
+        padding: 8px;
         border-top: 1px solid var(--border);
     }
 
@@ -331,7 +331,7 @@
 
 {% block topbar %}
 <div class="topbar">
-    <span class="topbar-title">📥 Gelen Faturalar</span>
+    <span class="topbar-title">▤ Gelen Faturalar</span>
     <div class="topbar-actions" style="display:flex;align-items:center;gap:10px">
         <div style="display:flex;align-items:center;gap:6px">
             <select id="filtrYil" class="form-control" style="padding:5px 8px;font-size:12px;width:90px" onchange="filtreleVeSirala()">
@@ -359,7 +359,7 @@
                 <option value="tutar_asc">Tutar: Düşük–Yüksek</option>
             </select>
         </div>
-        <button class="btn btn-ghost btn-sm" onclick="toggleUploadPanel()">+ PDF / XML Yükle</button>
+        <button class="btn btn-primary btn-sm" onclick="toggleUploadPanel()">+ Yeni Fatura Yükle</button>
     </div>
 </div>
 {% endblock %}
@@ -367,6 +367,12 @@
 {% block content %}
 
 <!-- DURUM TABLARı -->
+<div class="page-metrics">
+ <div class="page-metric"><small>Toplam Fatura</small><strong>{{ durum_sayilari.tum }}</strong></div>
+ <div class="page-metric"><small>Onay Bekleyen</small><strong>{{ durum_sayilari.bekliyor }}</strong></div>
+ <div class="page-metric"><small>Onaylanan</small><strong>{{ durum_sayilari.onaylandi }}</strong></div>
+ <div class="page-metric"><small>İşlem Gerektiren</small><strong>{{ durum_sayilari.eksik_bilgi + durum_sayilari.reddedildi }}</strong></div>
+</div>
 <div class="durum-tabs">
     <a href="/gelen?durum=tum" class="durum-tab {% if aktif_durum == 'tum' %}active-tum{% endif %}">
         📚 Tüm Faturalar <span>{{ durum_sayilari.tum }}</span>

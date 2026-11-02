@@ -53,7 +53,7 @@
         }
 
         .sidebar-logo {
-            padding: 24px 20px 20px;
+            padding: 14px 16px 12px;
             border-bottom: 1px solid var(--border);
         }
 
@@ -72,7 +72,7 @@
 
         .sidebar-nav {
             flex: 1;
-            padding: 16px 0;
+            padding: 8px 0;
         }
 
         .nav-section {
@@ -87,7 +87,7 @@
             display: flex;
             align-items: center;
             gap: 10px;
-            padding: 10px 20px;
+            padding: 8px 16px;
             color: var(--text2);
             text-decoration: none;
             font-size: 14px;
@@ -158,7 +158,28 @@
 
         .topbar-actions { margin-left: auto; display: flex; gap: 10px; }
 
-        .content { padding: 28px; flex: 1; }
+        .content { padding: 12px 16px; flex: 1; min-width: 0; }
+        .main { min-width: 0; }
+        .topbar { min-height: 48px; height: auto; padding: 7px 16px; gap: 10px; }
+        .topbar-title { font-size: 17px; font-weight: 750; }
+        .topbar .form-control { padding: 5px 8px; font-size: 12px; }
+        .topbar .btn { padding: 6px 11px; }
+        .card { padding: 12px; }
+        .page-metrics { display:grid; grid-template-columns:repeat(auto-fit,minmax(160px,1fr));gap:8px;margin-bottom:10px; }
+        .page-metric {background:var(--surface);border:1px solid var(--border);border-radius:10px;padding:9px 13px;display:flex;align-items:center;justify-content:space-between;gap:10px;}
+        .page-metric strong {font-size:21px;}
+        .page-toolbar {display:flex;align-items:center;flex-wrap:wrap;gap:8px;margin-bottom:10px;}
+        .page-toolbar .form-control {padding:6px 9px;font-size:12px;}
+        .archive-layout {display:grid;grid-template-columns:205px minmax(0,1fr);gap:10px;align-items:start;}
+        .archive-folder {display:block;padding:7px 10px;text-decoration:none;color:var(--text2);border-radius:7px;font-size:13px;}
+        .archive-folder:hover,.archive-folder.active {background:rgba(79,110,247,.13);color:var(--accent2);}
+        .table-scroll {width:100%;overflow-x:auto;}
+        .compact-table {width:100%;border-collapse:collapse;font-size:12px;}
+        .compact-table th,.compact-table td {padding:9px 10px;border-bottom:1px solid var(--border);text-align:left;vertical-align:middle;}
+        .compact-table th {font-size:11px;color:var(--text2);background:var(--surface2);white-space:nowrap;}
+        @media(max-width:850px){.archive-layout{grid-template-columns:1fr}.archive-folders{max-height:220px;overflow:auto}.page-metrics{grid-template-columns:repeat(2,minmax(0,1fr));}}
+        @media(max-width:480px){.page-metrics{grid-template-columns:1fr 1fr}.page-metric strong{font-size:17px}.content{padding:8px}.topbar-title{display:inline!important;}}
+
 
         /* ─── BUTTONS ─── */
         .btn {
@@ -468,7 +489,7 @@
                 padding-bottom: 4px;
             }
             .durum-tab { padding: 6px 10px; font-size: 11px; }
-            .topbar-title { display: none; }
+            .topbar-title { display: inline; }
             .topbar-actions { margin-left: 0; }
             .modal-pdf { flex-basis: 44dvh; min-height: 260px; }
         }
@@ -495,11 +516,19 @@
             <span>☑</span> Toplu Atama
         </a>
         {% endif %}
+        <a href="/arsiv" class="nav-item {% if request.path == '/arsiv' %}active{% endif %}">
+            <span>▤</span> Arşiv
+        </a>
+        {% if oturum_kullanici and oturum_kullanici.departman and oturum_kullanici.departman.kod|upper == 'MIM' %}
+        <a href="/mim-onay" class="nav-item {% if request.path == '/mim-onay' %}active{% endif %}">
+            <span>✓</span> MIM Arşiv Onayı
+        </a>
+        {% endif %}
         <div class="nav-section" style="margin-top:8px">Yönetim</div>
-        <a href="/yonetim/kullanicilar" class="nav-item">
+        <a href="/yonetim/kullanicilar" class="nav-item {% if request.path == '/yonetim/kullanicilar' %}active{% endif %}">
             <span>👤</span> Kullanıcılar
         </a>
-        <a href="/yonetim/projeler" class="nav-item">
+        <a href="/yonetim/projeler" class="nav-item {% if request.path == '/yonetim/projeler' %}active{% endif %}">
             <span>📂</span> Proje Kodları
         </a>
         <div class="nav-section" style="margin-top:8px">Sistem</div>

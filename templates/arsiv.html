@@ -1,0 +1,68 @@
+{% extends "base.html" %}
+{% block title %}Fatura Arşivi{% endblock %}
+{% block topbar %}
+<div class="topbar">
+ <span class="topbar-title">▤ Arşiv</span>
+ <span style="font-size:12px;color:var(--text2)">MIM onayı tamamlanan faturalar · Yıl / Ay klasörleri</span>
+ <span style="margin-left:auto;font-size:12px;color:var(--text2)">Toplam {{ toplam }} fatura</span>
+</div>
+{% endblock %}
+{% block content %}
+<div class="archive-layout">
+ <aside class="card archive-folders" style="padding:8px">
+  <div style="font-size:13px;font-weight:700;padding:10px 8px;border-bottom:1px solid var(--border)">▤ Arşiv Klasörleri</div>
+  {% set ns = namespace(yil=none) %}
+  {% for yil, ay, adet in donemler %}
+    {% if ns.yil != yil %}
+      {% if ns.yil is not none %}</details>{% endif %}
+      <details open style="margin-top:5px"><summary style="padding:8px;font-weight:700;cursor:pointer">{{ yil }}</summary>
+      {% set ns.yil = yil %}
+    {% endif %}
+    <a class="archive-folder {% if secili_yil == yil and secili_ay == ay %}active{% endif %}"
+       href="{{ url_for('arsiv_sayfasi',yil=yil,ay=ay) }}" style="padding-left:23px">▸ {{ ay_adlari[ay] }} <span style="float:right">{{ adet }}</span></a>
+  {% endfor %}
+  {% if ns.yil is not none %}</details>{% endif %}
+  {% if not donemler %}<div style="padding:12px;color:var(--text2);font-size:12px">MIM onaylı fatura henüz bulunmuyor.</div>{% endif %}
+ </aside>
+ <section class="card" style="padding:0;min-width:0;overflow:hidden">
+  <div style="padding:11px 12px;display:flex;align-items:center;justify-content:space-between;gap:10px;flex-wrap:wrap">
+   <strong>{{ secili_yil or 'Arşiv' }}{% if secili_ay %} › {{ ay_adlari[secili_ay] }}{% endif %}</strong>
+   <small style="color:var(--text2)">{{ sayfalama.total }} kayıt</small>
+  </div>
+  <form method="get" action="/arsiv" class="page-toolbar" style="padding:0 12px 10px;margin:0">
+   {% if secili_yil %}<input type="hidden" name="yil" value="{{ secili_yil }}"><input type="hidden" name="ay" value="{{ secili_ay }}">{% endif %}
+   <input class="form-control" style="flex:2;min-width:155px" name="ara" value="{{ genel }}" placeholder="Fatura numarası, firma veya içerik">
+   <input class="form-control" style="flex:1;min-width:125px" name="firma" value="{{ firma }}" placeholder="Firma adı">
+   <input class="form-control" style="flex:1;min-width:125px" name="icerik" value="{{ icerik }}" placeholder="Fatura içinde geçen kelime">
+   <button class="btn btn-primary btn-sm" type="submit">Ara</button>
+   <a class="btn btn-ghost btn-sm" href="{{ url_for('arsiv_sayfasi', yil=secili_yil,ay=secili_ay) }}">Sıfırla</a>
+  </form>
+  <div class="table-scroll">
+  <table class="compact-table">
+   <thead><tr><th>Fatura No</th><th>Firma</th><th>Tarih</th><th>Proje</th><th>Toplam</th><th>MIM Onayı</th><th>Belge</th></tr></thead>
+   <tbody>
+    {% for f in faturalar %}
+    <tr>
+     <td><strong>{{ f.fatura_no or '—' }}</strong></td><td>{{ f.firma_adi or '—' }}</td>
+     <td>{{ f.fatura_tarihi or '—' }}</td>
+     <td>{{ f.ana_proje.kod if f.ana_proje else '—' }}</td>
+     <td style="white-space:nowrap">{{ '%.2f'|format(f.tutar or 0) }} {{ f.para_birimi or 'TRY' }}</td>
+     <td style="white-space:nowrap">{{ f.arsiv_kaydi.onay_tarihi.strftime('%d.%m.%Y') }}</td>
+     <td><a class="btn btn-ghost btn-sm" href="{{ url_for('fatura_goruntule',fatura_id=f.id) }}" target="_blank" rel="noopener">Görüntüle</a>
+       {% if not f.arsiv_kaydi.metin_okundu %}<small title="PDF metin katmanı bulunamadı, içerik araması için OCR gerekebilir" style="color:var(--orange)">Metin yok</small>{% endif %}
+     </td>
+    </tr>
+    {% else %}<tr><td colspan="7" style="text-align:center;padding:25px;color:var(--text2)">Seçili klasörde aramaya uygun kayıt bulunamadı.</td></tr>{% endfor %}
+   </tbody>
+  </table>
+  </div>
+  {% if sayfalama.pages > 1 %}
+   <div style="padding:10px;display:flex;justify-content:flex-end;gap:8px;align-items:center;font-size:12px">
+    {% if sayfalama.has_prev %}<a class="btn btn-ghost btn-sm" href="{{ url_for('arsiv_sayfasi',yil=secili_yil,ay=secili_ay,ara=genel,firma=firma,icerik=icerik,sayfa=sayfalama.prev_num) }}">Önceki</a>{% endif %}
+    {{ sayfalama.page }} / {{ sayfalama.pages }}
+    {% if sayfalama.has_next %}<a class="btn btn-ghost btn-sm" href="{{ url_for('arsiv_sayfasi',yil=secili_yil,ay=secili_ay,ara=genel,firma=firma,icerik=icerik,sayfa=sayfalama.next_num) }}">Sonraki</a>{% endif %}
+   </div>
+  {% endif %}
+ </section>
+</div>
+{% endblock %}
