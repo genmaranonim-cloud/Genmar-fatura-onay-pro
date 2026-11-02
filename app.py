@@ -441,6 +441,23 @@ class Fatura(db.Model):
     alt_proje = db.relationship('AltProje')
     proje_satirlari = db.relationship('FaturaProje', backref='fatura', cascade='all, delete-orphan')
 
+
+class MimArsivKaydi(db.Model):
+    """MIM tarafından verilen nihai arşiv onayı; normal onaydan ayrıdır."""
+    __tablename__ = 'mim_arsiv_kaydi'
+    id = db.Column(db.Integer, primary_key=True)
+    fatura_id = db.Column(db.Integer, db.ForeignKey('fatura.id', ondelete='CASCADE'),
+                         nullable=False, unique=True, index=True)
+    onaylayan_id = db.Column(db.Integer, db.ForeignKey('kullanici.id'), nullable=False)
+    onay_tarihi = db.Column(db.DateTime, nullable=False, default=datetime.utcnow)
+    yil = db.Column(db.Integer, nullable=False, index=True)
+    ay = db.Column(db.Integer, nullable=False, index=True)
+    icerik_metni = db.Column(db.Text, nullable=False, default='')
+    metin_okundu = db.Column(db.Boolean, nullable=False, default=False)
+    fatura = db.relationship('Fatura', backref=db.backref(
+        'arsiv_kaydi', uselist=False, cascade='all, delete-orphan'))
+    onaylayan = db.relationship('Kullanici')
+
 # ─── YARDIMCI ───────────────────────────────────────────────────────────────
 
 def dosyadan_bilgi_cek(dosya_adi):
@@ -702,6 +719,43 @@ def gorulebilir_fatura_sorgusu(sorgu=None):
         Fatura.atanan_id == kid,
         ~Fatura.atanan.has(Kullanici.atanan_faturalari_gizle.is_(True)),
     ))
+
+
+ARSIV_AY_ADLARI = ('', 'Ocak', 'Şubat', 'Mart', 'Nisan', 'Mayıs', 'Haziran',
+                   'Temmuz', 'Ağustos', 'Eylül', 'Ekim', 'Kasım', 'Aralık')
+
+def arsiv_fatura_donemi(fatura):
+    """Fatura tarihi varsa onu, yoksa yüklenme tarihini esas alır."""
+    tarih = (fatura.fatura_tarihi or '').strip()[:10]
+    for bicim in ('%Y-%m-%d', '%d.%m.%Y', '%d/%m/%Y', '%Y/%m/%d', '%d-%m-%Y'):
+        try:
+            dt = datetime.strptime(tarih, bicim)
+            if 2000 <= dt.year <= 2100:
+                return dt.year, dt.month
+        except (ValueError, TypeError):
+            pass
+    dt = fatura.yuklenme_tarihi or datetime.utcnow()
+    return dt.year, dt.month
+
+def arsiv_icerik_metni(fatura):
+    """Arşiv için PDF'in metin katmanını indeksle; taranmış görüntü OCR gerektirir."""
+    try:
+        pdf_bytes, _ = fatura_pdf_bytes_ve_adres(fatura)
+        reader = PdfReader(_io.BytesIO(pdf_bytes))
+        bolumler, toplam = [], 0
+        for sayfa in reader.pages[:200]:
+            parca = (sayfa.extract_text() or '')[:max(0, 500000 - toplam)]
+            if parca:
+                bolumler.append(parca)
+                toplam += len(parca)
+            if toplam >= 500000:
+                break
+        metin = ' '.join(bolumler)
+        return metin, bool(metin.strip())
+    except Exception as hata:
+        app.logger.warning('Arşiv metin okunamadı (fatura_id=%s): %s',
+                           fatura.id, type(hata).__name__)
+        return '', False
 
 def supabase_dosya_yolu(public_url):
     """Supabase public URL'den dosya yolunu çıkar."""
